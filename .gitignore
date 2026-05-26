@@ -1,0 +1,53 @@
+# ===== Python =====
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# ===== 機密資料（絕對不能上傳）=====
+# SQLite DB 含個人財務 + 單據資料
+*.db
+*.sqlite
+*.sqlite3
+# API key 與 secrets
+.env
+.env.local
+.env.*.local
+.streamlit/secrets.toml
+
+# ===== 個人輸出 / 測試檔 =====
+outputs/
+testing/
+test/
+tests/
+*.xlsx
+*.xls
+*.csv
+*.zip
+*.7z
+*.rar
+
+# 但要保留 requirements 系列
+!requirements*.txt
+
+# ===== 暫存 / 系統 =====
+*.tmp
+*.log
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== 共用資料夾（非本 repo 內容）=====
+Office Tools/
+accounting_app_v2/
