@@ -15,12 +15,13 @@ st.set_page_config(
 init_dbs()
 
 app_header("進階設定", "⚙️",
-           "匯率 · 付款方式對應 · 期間鎖定 · 專案管理")
+           "帳戶 · 匯率 · 付款方式對應 · 期間鎖定 · 專案管理")
 
 from personal_finance import db as pfdb, seed as pfseed
 
-tab0, tab1, tab2, tab3, tab4 = st.tabs([
+tab0, tab_acc, tab1, tab2, tab3, tab4 = st.tabs([
     "📖 使用教學",
+    "🏦 帳戶管理",
     "💱 外幣匯率",
     "🔗 付款方式對應",
     "🔒 期間鎖定",
@@ -241,6 +242,232 @@ with tab0:
         """,
         unsafe_allow_html=True,
     )
+
+# ============ Tab 帳戶管理 ============
+with tab_acc:
+    st.caption(
+        "管理所有帳戶：現金、銀行、信用卡、消費類別、收入來源。"
+        "新增帳戶後，可在「個人記賬」或「提取單據」用到。"
+    )
+
+    ACCOUNT_TYPE_LABELS = {
+        "asset": "💰 資產（現金/銀行/應收）",
+        "liability": "💳 負債（信用卡/借款）",
+        "expense": "🛒 支出類別",
+        "income": "💼 收入類別",
+    }
+
+    # === 篩選 ===
+    flt_col1, flt_col2 = st.columns(2)
+    type_filter = flt_col1.selectbox(
+        "篩選類型",
+        ["（全部）"] + list(ACCOUNT_TYPE_LABELS.values()),
+        key="acc_type_filter",
+    )
+    show_inactive = flt_col2.checkbox(
+        "包含已停用的帳戶", value=False,
+        key="acc_show_inactive",
+    )
+
+    # 取資料
+    all_accs = pfdb.list_accounts(active_only=not show_inactive)
+    if type_filter != "（全部）":
+        # 反查 type code
+        type_code = next(
+            (k for k, v in ACCOUNT_TYPE_LABELS.items()
+             if v == type_filter), None)
+        if type_code:
+            all_accs = [a for a in all_accs
+                         if a["account_type"] == type_code]
+
+    if all_accs:
+        df_acc = pd.DataFrame([
+            {
+                "代碼": a["code"],
+                "圖示": a.get("icon") or "",
+                "名稱": a["name"],
+                "類型": ACCOUNT_TYPE_LABELS.get(
+                    a["account_type"], a["account_type"]),
+                "幣別": a.get("currency") or "HKD",
+                "期初餘額": a.get("opening_balance") or 0,
+                "排序": a.get("sort_order") or 0,
+                "啟用": "✅" if a.get("is_active") else "❌",
+            }
+            for a in all_accs
+        ])
+        sel_acc = st.dataframe(
+            df_acc, hide_index=True, use_container_width=True,
+            on_select="rerun", selection_mode="single-row",
+            column_config={
+                "期初餘額": st.column_config.NumberColumn(
+                    format="$%.2f"),
+            },
+        )
+
+        # === 編輯選定帳戶 ===
+        if sel_acc.selection.rows:
+            sel_code = df_acc.iloc[sel_acc.selection.rows[0]]["代碼"]
+            acc = pfdb.get_account(sel_code)
+            if acc:
+                st.divider()
+                with st.expander(
+                    f"✏️ 編輯帳戶：{acc.get('icon') or ''} "
+                    f"{acc['name']} ({acc['code']})",
+                    expanded=True,
+                ):
+                    with st.form(f"edit_acc_{sel_code}"):
+                        ec1, ec2 = st.columns(2)
+                        with ec1:
+                            new_name = st.text_input(
+                                "顯示名稱", acc.get("name", ""))
+                            new_icon = st.text_input(
+                                "圖示 emoji（選填）",
+                                acc.get("icon") or "",
+                                placeholder="例：🏦 💳 🛒")
+                            new_currency = st.selectbox(
+                                "幣別",
+                                ["HKD", "USD", "JPY", "CNY", "EUR",
+                                  "GBP", "AUD", "SGD", "TWD"],
+                                index=(["HKD", "USD", "JPY", "CNY",
+                                        "EUR", "GBP", "AUD", "SGD",
+                                        "TWD"].index(
+                                    acc.get("currency") or "HKD")
+                                    if (acc.get("currency") or "HKD")
+                                       in ["HKD", "USD", "JPY", "CNY",
+                                           "EUR", "GBP", "AUD", "SGD",
+                                           "TWD"] else 0),
+                            )
+                        with ec2:
+                            new_opening = st.number_input(
+                                "期初餘額",
+                                value=float(acc.get(
+                                    "opening_balance") or 0),
+                                format="%.2f",
+                            )
+                            new_sort = st.number_input(
+                                "排序（小→大）",
+                                value=int(acc.get("sort_order") or 0),
+                                step=1,
+                            )
+                            new_active = st.checkbox(
+                                "啟用此帳戶",
+                                value=bool(acc.get("is_active")),
+                            )
+                        new_notes = st.text_area(
+                            "備註", acc.get("notes") or "")
+
+                        bcol1, bcol2 = st.columns(2)
+                        if bcol1.form_submit_button(
+                                "💾 儲存", type="primary",
+                                use_container_width=True):
+                            try:
+                                pfdb.upsert_account(
+                                    code=sel_code,
+                                    name=new_name,
+                                    account_type=acc["account_type"],
+                                    opening_balance=new_opening,
+                                    currency=new_currency,
+                                    sort_order=new_sort,
+                                    icon=new_icon or None,
+                                    notes=new_notes or None,
+                                )
+                                # 處理 is_active（upsert 無此欄位，
+                                # 直接 raw SQL）
+                                from personal_finance import db as _pfdb
+                                with _pfdb._conn() as _c:
+                                    _c.execute(
+                                        "UPDATE accounts "
+                                        "SET is_active=? WHERE code=?",
+                                        (1 if new_active else 0,
+                                         sel_code),
+                                    )
+                                st.success(f"✅ 已更新 {sel_code}")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"更新失敗：{ex}")
+
+                        if bcol2.form_submit_button(
+                                "🗑️ 刪除", type="secondary",
+                                use_container_width=True):
+                            try:
+                                pfdb.delete_account(sel_code)
+                                st.success(f"已刪除 {sel_code}")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(
+                                    f"❌ 刪除失敗（可能有分錄關聯）：\n\n"
+                                    f"{ex}\n\n"
+                                    f"💡 建議改為「停用」（取消勾選"
+                                    f"「啟用此帳戶」）。"
+                                )
+    else:
+        st.info("尚無符合條件的帳戶。")
+
+    # === 新增帳戶 ===
+    st.divider()
+    with st.expander("➕ 新增帳戶", expanded=False):
+        with st.form("new_acc"):
+            nc1, nc2 = st.columns(2)
+            with nc1:
+                na_code = st.text_input(
+                    "帳戶代碼（英文 / 底線，建立後不能改）",
+                    placeholder="例：ZA_BANK / CITI_VISA / FOOD",
+                )
+                na_name = st.text_input(
+                    "顯示名稱",
+                    placeholder="例：ZA Bank / Citi Visa / 餐飲",
+                )
+                na_type_label = st.selectbox(
+                    "帳戶類型",
+                    list(ACCOUNT_TYPE_LABELS.values()),
+                )
+                na_type = next(
+                    (k for k, v in ACCOUNT_TYPE_LABELS.items()
+                     if v == na_type_label), "asset")
+            with nc2:
+                na_icon = st.text_input(
+                    "圖示 emoji（選填）",
+                    placeholder="例：🏦 💳 🛒",
+                )
+                na_opening = st.number_input(
+                    "期初餘額", value=0.0, format="%.2f",
+                )
+                na_currency = st.selectbox(
+                    "幣別",
+                    ["HKD", "USD", "JPY", "CNY", "EUR",
+                      "GBP", "AUD", "SGD", "TWD"],
+                )
+            na_notes = st.text_input("備註（選填）", "")
+
+            if st.form_submit_button(
+                    "✨ 建立帳戶", type="primary",
+                    use_container_width=True):
+                # 驗證
+                if not na_code.strip():
+                    st.error("代碼不能為空")
+                elif not na_name.strip():
+                    st.error("名稱不能為空")
+                elif pfdb.get_account(na_code.strip().upper()):
+                    st.error(f"代碼「{na_code}」已存在")
+                else:
+                    try:
+                        pfdb.upsert_account(
+                            code=na_code.strip().upper(),
+                            name=na_name.strip(),
+                            account_type=na_type,
+                            opening_balance=na_opening,
+                            currency=na_currency,
+                            icon=na_icon or None,
+                            notes=na_notes or None,
+                        )
+                        st.success(
+                            f"✅ 建立成功：{na_icon or ''} {na_name} "
+                            f"({na_code.upper()})"
+                        )
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"建立失敗：{ex}")
+
 
 # ============ Tab 1: 外幣匯率 ============
 with tab1:
