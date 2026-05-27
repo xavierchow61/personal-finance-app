@@ -526,6 +526,157 @@ with tab2:
         "例如「PayMe」→ PAYME；「HSBC Visa」→ HSBC_VISA"
     )
 
+    # === 🪄 智能對應精靈 ===
+    import database as _invdb
+
+    def _suggest_account(keyword: str, accounts: list[dict]) -> str | None:
+        """為一個 OCR 字眼推薦最匹配嘅帳戶 code（partial match）"""
+        kw_lower = keyword.lower().strip()
+        if not kw_lower:
+            return None
+        # 1. 精確包含（雙向）
+        for a in accounts:
+            code_l = a["code"].lower()
+            name_l = a["name"].lower()
+            if code_l in kw_lower or name_l in kw_lower:
+                return a["code"]
+            if kw_lower in code_l or kw_lower in name_l:
+                return a["code"]
+        # 2. 模糊：字首匹配
+        for a in accounts:
+            if any(part in kw_lower
+                    for part in a["code"].lower().split("_")):
+                return a["code"]
+        return None
+
+    # 找出未對應嘅 OCR 字眼
+    all_invoices = _invdb.list_all()
+    payment_methods_seen = sorted({
+        (i.get("payment_method") or "").strip()
+        for i in all_invoices
+        if i.get("payment_method")
+        and i.get("payment_method").strip()
+    })
+    existing_aliases_lower = {
+        a["keyword"].lower().strip()
+        for a in pfdb.list_payment_aliases()
+    }
+    unmapped = [
+        m for m in payment_methods_seen
+        if m.lower() not in existing_aliases_lower
+        and not pfdb.lookup_payment_alias(m)
+    ]
+
+    if unmapped:
+        st.markdown(
+            f"""
+            <div style="background:linear-gradient(135deg,
+                rgba(255,199,0,0.18) 0%,
+                rgba(0,166,224,0.10) 100%);
+                border:2px solid rgba(255,199,0,0.5);
+                border-radius:16px;padding:1.1rem 1.4rem;
+                margin-bottom:1rem;
+                box-shadow:0 4px 16px rgba(0,120,186,0.15);">
+                <div style="color:#0078BA;font-weight:700;
+                            font-size:1.1rem;margin-bottom:0.4rem;">
+                    🪄 智能對應精靈
+                </div>
+                <div style="color:#1A1A2E;font-size:0.92rem;
+                            line-height:1.5;">
+                    系統偵測到 <b>{len(unmapped)} 個</b>
+                    已出現在單據但仍未對應到帳戶嘅付款方式字眼。
+                    為佢哋指定對應帳戶，將來自動入賬會更準確。
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # 載入所有可選帳戶
+        _accs = pfdb.list_accounts(account_type="asset") + \
+                pfdb.list_accounts(account_type="liability")
+        _acc_opts = {
+            f"{a.get('icon') or ''} {a['name']} ({a['code']})":
+                a["code"]
+            for a in _accs
+        }
+        _opt_labels = ["（跳過）"] + list(_acc_opts.keys())
+
+        with st.form("alias_wizard"):
+            st.markdown(
+                "**逐個揀對應帳戶（系統已預先建議）：**"
+            )
+            wizard_picks: dict[str, str] = {}
+            for kw in unmapped:
+                suggested_code = _suggest_account(kw, _accs)
+                suggested_label = next(
+                    (lbl for lbl, c in _acc_opts.items()
+                     if c == suggested_code),
+                    None,
+                )
+                default_idx = (
+                    _opt_labels.index(suggested_label)
+                    if suggested_label in _opt_labels
+                    else 0
+                )
+
+                wc1, wc2 = st.columns([2, 3])
+                badge = "✨ 已建議" if suggested_code else "❓ 未建議"
+                wc1.markdown(
+                    f"**{kw}**<br>"
+                    f"<span style='color:#6B7BA0;font-size:0.78rem;'>"
+                    f"{badge}</span>",
+                    unsafe_allow_html=True,
+                )
+                with wc2:
+                    sel = st.selectbox(
+                        "對應到",
+                        _opt_labels,
+                        index=default_idx,
+                        key=f"wiz_{kw}",
+                        label_visibility="collapsed",
+                    )
+                wizard_picks[kw] = sel
+
+            wb1, wb2 = st.columns(2)
+            apply_all = wb1.form_submit_button(
+                "✨ 一鍵儲存全部（跳過「（跳過）」項目）",
+                type="primary", use_container_width=True,
+            )
+            apply_suggested = wb2.form_submit_button(
+                "⚡ 只儲存已建議",
+                use_container_width=True,
+            )
+
+            if apply_all or apply_suggested:
+                n_saved = 0
+                for kw, sel in wizard_picks.items():
+                    # 「只儲存已建議」 → 跳過冇 suggestion 嘅
+                    if apply_suggested:
+                        if _suggest_account(kw, _accs) is None:
+                            continue
+                    if sel == "（跳過）":
+                        continue
+                    try:
+                        pfdb.add_payment_alias(kw, _acc_opts[sel])
+                        n_saved += 1
+                    except Exception:
+                        pass
+                if n_saved > 0:
+                    st.success(
+                        f"✅ 對應精靈完成！已儲存 {n_saved} 條對應"
+                    )
+                    st.rerun()
+                else:
+                    st.warning("⚠️ 冇任何項目被儲存")
+    else:
+        # 全部對應 OK
+        st.success(
+            "🎉 所有已出現嘅付款方式都已對應到帳戶 — "
+            "唔需要精靈協助！"
+        )
+
+    st.divider()
     aliases = pfdb.list_payment_aliases()
     if aliases:
         df_al = pd.DataFrame([
