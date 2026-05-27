@@ -23,15 +23,26 @@ check_api_key()
 
 st.markdown(
     """
-    <div style="background:rgba(0,166,224,0.08);
+    <div style="background:linear-gradient(135deg,
+                rgba(0,166,224,0.10) 0%,
+                rgba(255,199,0,0.08) 100%);
                 border:2px dashed rgba(0,166,224,0.4);
-                border-radius:14px;padding:0.9rem 1.2rem;
-                margin-bottom:0.8rem;">
-        <span style="font-weight:600;color:#1A1A2E;">💡 小貼士：</span>
-        <span style="color:#1A1A2E;">
-        可以直接把檔案 <b>拖拉</b> 進下方虛線框內，
-        或按按鈕逐個選擇。支援多檔案、PDF 多頁、自動跳過重複單據。
-        </span>
+                border-radius:16px;padding:1.1rem 1.4rem;
+                margin-bottom:1rem;
+                box-shadow:0 4px 14px rgba(0,120,186,0.12);">
+        <div style="color:#0078BA;font-weight:700;font-size:1.05rem;
+                    margin-bottom:0.6rem;">
+            💡 小貼士
+        </div>
+        <ul style="color:#1A1A2E;margin:0;padding-left:1.4rem;
+                   line-height:1.7;font-size:0.95rem;">
+            <li>可以直接把檔案 <b>拖拉</b> 進下方虛線框內，
+                或按按鈕逐個選擇</li>
+            <li>支援 <b>多檔案</b> 一次上傳</li>
+            <li><b>PDF 多頁面</b> 會全部讀取</li>
+            <li>已匯入過的單據會 <b>自動跳過</b>，避免重複</li>
+            <li>勾選「自動寫入個人記賬」會 <b>同時寫入分錄</b></li>
+        </ul>
     </div>
     """,
     unsafe_allow_html=True,
@@ -122,12 +133,4 @@ if uploaded:
         if ok:
             st.info("👉 請前往「📋 單據紀錄」或「💰 個人記賬」查閱結果")
 
-# === 側欄 ===
-with st.sidebar:
-    st.markdown("### 💡 提示")
-    st.markdown("""
-- 支援**多檔案**一次上傳
-- **PDF 多頁面**會全部讀取
-- 已匯入過的單據會**自動跳過**
-- 勾選自動入賬後會同時寫入分錄
-""")
+# 側欄提示已合併至頁面頂部「💡 小貼士」卡片
