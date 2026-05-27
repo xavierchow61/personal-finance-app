@@ -16,7 +16,7 @@ st.set_page_config(
 init_dbs()
 
 # 儀表板不顯示頁面標題（節省版面，直接顯示 KPI）
-app_header()
+app_header("")
 
 check_api_key()
 
