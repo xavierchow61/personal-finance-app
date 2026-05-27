@@ -692,13 +692,93 @@ with tab2:
                             use_container_width=True,
                             on_select="rerun",
                             selection_mode="single-row")
+
+        # === 編輯選定對應（含預設值都可改）===
         if sel.selection.rows:
-            del_id = int(df_al.iloc[sel.selection.rows[0]]["ID"])
-            if st.button(f"🗑️ 刪除選定的對應 #{del_id}",
-                          type="secondary"):
-                pfdb.delete_payment_alias(del_id)
-                st.success(f"已刪除 #{del_id}")
-                st.rerun()
+            sel_row = df_al.iloc[sel.selection.rows[0]]
+            sel_id = int(sel_row["ID"])
+            sel_kw = sel_row["關鍵字（部份匹配）"]
+            sel_acc_code = sel_row["對應帳戶"]
+            sel_notes_val = sel_row["備註"]
+
+            st.divider()
+            with st.expander(
+                f"✏️ 編輯對應 #{sel_id}：{sel_kw} → {sel_acc_code}",
+                expanded=True,
+            ):
+                _accs_edit = pfdb.list_accounts(
+                    account_type="asset") + \
+                    pfdb.list_accounts(account_type="liability")
+                _acc_opts_edit = {
+                    f"{a['code']} - {a['name']}": a["code"]
+                    for a in _accs_edit
+                }
+                _opt_list = list(_acc_opts_edit.keys())
+                # 揾返現時 account 嘅 label
+                cur_label = next(
+                    (lbl for lbl, c in _acc_opts_edit.items()
+                     if c == sel_acc_code),
+                    None,
+                )
+
+                with st.form(f"edit_alias_{sel_id}"):
+                    new_kw = st.text_input(
+                        "關鍵字（會用 LIKE 模糊匹配）",
+                        value=sel_kw,
+                    )
+                    new_acc_label = st.selectbox(
+                        "對應到帳戶",
+                        _opt_list,
+                        index=(_opt_list.index(cur_label)
+                                if cur_label in _opt_list else 0),
+                    )
+                    new_notes = st.text_input(
+                        "備註（選填）", value=sel_notes_val or "",
+                    )
+
+                    eb1, eb2 = st.columns(2)
+                    save_clicked = eb1.form_submit_button(
+                        "💾 儲存修改", type="primary",
+                        use_container_width=True,
+                    )
+                    del_clicked = eb2.form_submit_button(
+                        "🗑️ 刪除", type="secondary",
+                        use_container_width=True,
+                    )
+
+                    if save_clicked:
+                        new_kw_s = new_kw.strip()
+                        if not new_kw_s:
+                            st.error("關鍵字不能為空")
+                        else:
+                            try:
+                                # 如關鍵字有改 → 先刪舊嘅
+                                # （因 add_payment_alias 用 lower
+                                # 比較，會 conflict）
+                                if (new_kw_s.lower() !=
+                                        sel_kw.lower()):
+                                    pfdb.delete_payment_alias(sel_id)
+                                # 寫入（會 ON CONFLICT update）
+                                pfdb.add_payment_alias(
+                                    new_kw_s,
+                                    _acc_opts_edit[new_acc_label],
+                                    new_notes or None,
+                                )
+                                st.success(
+                                    f"✅ 已更新：{new_kw_s} → "
+                                    f"{_acc_opts_edit[new_acc_label]}"
+                                )
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"更新失敗：{ex}")
+
+                    if del_clicked:
+                        try:
+                            pfdb.delete_payment_alias(sel_id)
+                            st.success(f"已刪除 #{sel_id}")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(str(ex))
     else:
         st.info("尚未設定任何對應。系統會用 fallback 自動分類。")
 
