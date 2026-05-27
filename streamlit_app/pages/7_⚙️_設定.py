@@ -510,7 +510,17 @@ with tab_cc:
                                         day=min(due_day, last))
         return target
 
-    cards = pfdb.list_credit_cards()
+    # 防呆：若 list_credit_cards 失敗（例如 migration 未跑），回空 list
+    try:
+        # 強制 init_db 確保新表存在
+        pfdb.init_db()
+        cards = pfdb.list_credit_cards()
+    except Exception as ex:
+        st.error(
+            f"⚠️ 無法載入信用卡資料：{type(ex).__name__}: {ex}\n\n"
+            "請嘗試重啟 Streamlit Cloud app（Manage app → Reboot）"
+        )
+        cards = []
 
     if cards:
         # 計算每張卡嘅 utilization + 距離還款日

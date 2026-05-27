@@ -181,6 +181,28 @@ def init_db():
             c.execute("ALTER TABLE journal_entries ADD COLUMN currency TEXT DEFAULT 'HKD'")
         if "fx_rate" not in cols:
             c.execute("ALTER TABLE journal_entries ADD COLUMN fx_rate REAL DEFAULT 1.0")
+        # Migration：credit_cards 表（保證舊 DB 都有）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS credit_cards (
+                card_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_code TEXT UNIQUE NOT NULL,
+                card_last4 TEXT,
+                credit_limit REAL,
+                statement_day INTEGER,
+                due_day INTEGER,
+                interest_rate REAL,
+                annual_fee REAL,
+                rewards TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_code) REFERENCES accounts(code)
+                    ON DELETE CASCADE
+            )
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_cc_account
+            ON credit_cards(account_code)
+        """)
 
 
 # ============================================================
@@ -658,17 +680,26 @@ def list_fx_rates() -> list[dict]:
 # CREDIT CARDS
 # ============================================================
 def list_credit_cards() -> list[dict]:
-    """列出所有信用卡額外資料（JOIN accounts 帶埋名稱）"""
-    init_db()
-    with _conn() as c:
-        rows = c.execute("""
-            SELECT cc.*, a.name AS account_name, a.icon AS account_icon,
-                   a.currency AS account_currency, a.is_active
-            FROM credit_cards cc
-            JOIN accounts a ON a.code = cc.account_code
-            ORDER BY a.sort_order, a.name
-        """).fetchall()
-        return [dict(r) for r in rows]
+    """列出所有信用卡額外資料（JOIN accounts 帶埋名稱）
+
+    若 credit_cards 表不存在（migration 未跑）→ 自動 init + 重試
+    若仍失敗 → 回空 list（讓 UI 仍能渲染）
+    """
+    try:
+        init_db()
+        with _conn() as c:
+            rows = c.execute("""
+                SELECT cc.*, a.name AS account_name,
+                       a.icon AS account_icon,
+                       a.currency AS account_currency, a.is_active
+                FROM credit_cards cc
+                JOIN accounts a ON a.code = cc.account_code
+                ORDER BY a.sort_order, a.name
+            """).fetchall()
+            return [dict(r) for r in rows]
+    except sqlite3.OperationalError:
+        # Table doesn't exist or schema mismatch — return empty
+        return []
 
 
 def get_credit_card(account_code: str) -> dict | None:
