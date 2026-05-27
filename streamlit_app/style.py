@@ -180,6 +180,26 @@ def inject_glass_style():
                     0 4px 14px rgba(0,0,0,0.15);
     }}
 
+    /* 側欄內嘅按鈕（如登出）— 白底深字，與藍底側欄形成對比 */
+    [data-testid="stSidebar"] .stButton > button,
+    [data-testid="stSidebar"] .stButton > button > * {{
+        background: rgba(255,255,255,0.95) !important;
+        color: {PALETTE['text']} !important;
+        border: 1px solid rgba(255,255,255,0.4) !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.18),
+                    inset 0 1px 0 rgba(255,255,255,0.8) !important;
+    }}
+    [data-testid="stSidebar"] .stButton > button:hover,
+    [data-testid="stSidebar"] .stButton > button:hover > * {{
+        background: white !important;
+        color: {PALETTE['accent_dark']} !important;
+        border-color: white !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.25),
+                    inset 0 1px 0 rgba(255,255,255,1) !important;
+    }}
+
     /* ============ Dataframe（白肚皮卡）============ */
     [data-testid="stDataFrame"] {{
         background: rgba(255,255,255,0.92);
