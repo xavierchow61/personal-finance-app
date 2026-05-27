@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import tempfile
 import streamlit as st
 
-from streamlit_app._common import C, app_header, check_api_key, init_dbs
+from streamlit_app._common import (C, app_header, check_api_key,
+                                      init_dbs, render_subpage_nav)
 
 st.set_page_config(
     page_title="提取單據", page_icon="📤", layout="wide",
@@ -14,8 +15,9 @@ st.set_page_config(
 )
 init_dbs()
 
-app_header("提取單據", "📤",
+app_header("單據處理", "📤",
             "上傳 JPG / PDF 檔案，系統會自動辨識內容並寫入賬目")
+render_subpage_nav("invoice")
 
 check_api_key()
 

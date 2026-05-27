@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import streamlit as st
 import pandas as pd
 
-from streamlit_app._common import C, app_header, init_dbs, kpi_card
+from streamlit_app._common import (C, app_header, init_dbs, kpi_card,
+                                      render_subpage_nav)
 
 st.set_page_config(
     page_title="報銷追蹤", page_icon="🏢", layout="wide",
@@ -14,8 +15,9 @@ st.set_page_config(
 )
 init_dbs()
 
-app_header("報銷追蹤", "🏢",
+app_header("個人記賬", "🏢",
            "公司報銷單據總覽 · 待收款清單 · 一鍵標記已收款")
+render_subpage_nav("ledger")
 
 import database as invdb
 from personal_finance import db as pfdb, posting as pfpost

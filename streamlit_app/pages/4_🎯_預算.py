@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import streamlit as st
 import pandas as pd
 
-from streamlit_app._common import C, app_header, init_dbs, plotly_glass_layout
+from streamlit_app._common import (C, app_header, init_dbs,
+                                      plotly_glass_layout, render_subpage_nav)
 
 st.set_page_config(
     page_title="預算", page_icon="🎯", layout="wide",
@@ -14,7 +15,8 @@ st.set_page_config(
 )
 init_dbs()
 
-app_header("預算與實績", "🎯", "月度預算追蹤、超支警告及歷史走勢")
+app_header("個人記賬", "🎯", "月度預算追蹤、超支警告及歷史走勢")
+render_subpage_nav("ledger")
 
 from personal_finance import db as pfdb, reports as pfr
 from datetime import date

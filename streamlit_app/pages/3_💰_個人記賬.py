@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import streamlit as st
 import pandas as pd
 
-from streamlit_app._common import C, app_header, init_dbs
+from streamlit_app._common import C, app_header, init_dbs, render_subpage_nav
 
 st.set_page_config(
     page_title="個人記賬", page_icon="💰", layout="wide",
@@ -15,6 +15,7 @@ st.set_page_config(
 init_dbs()
 
 app_header("個人記賬", "💰", "雙式記賬（Double-Entry Ledger）")
+render_subpage_nav("ledger")
 
 from personal_finance import db as pfdb, reports as pfr
 from personal_finance import excel_export as pfexp

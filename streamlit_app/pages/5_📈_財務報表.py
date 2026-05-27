@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import streamlit as st
 import pandas as pd
 
-from streamlit_app._common import C, app_header, init_dbs, kpi_card
+from streamlit_app._common import (C, app_header, init_dbs, kpi_card,
+                                      render_subpage_nav)
 
 st.set_page_config(
     page_title="財務報表", page_icon="📈", layout="wide",
@@ -14,7 +15,8 @@ st.set_page_config(
 )
 init_dbs()
 
-app_header("財務報表", "📈", "收支表 · 資產負債表 · 期間對比")
+app_header("個人記賬", "📈", "收支表 · 資產負債表 · 期間對比")
+render_subpage_nav("ledger")
 
 from personal_finance import reports as pfr
 

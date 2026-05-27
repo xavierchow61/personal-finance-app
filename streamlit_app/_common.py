@@ -51,51 +51,51 @@ def render_sidebar_nav():
             'margin-bottom:1rem;">PERSONAL FINANCE</div>',
             unsafe_allow_html=True,
         )
-        # === 主要入口 ===
+        # === 精簡側欄：只 3 個 hub + 儀表板 ===
         st.page_link("Home.py", label="儀表板", icon="🏠")
-
-        st.markdown(
-            '<div style="margin-top:0.8rem;color:#FFC700;font-size:0.7rem;'
-            'font-weight:700;letter-spacing:0.15em;'
-            'border-top:1px solid rgba(255,255,255,0.2);'
-            'padding-top:0.6rem;">📤 單據處理</div>',
-            unsafe_allow_html=True,
-        )
+        st.write("")
         st.page_link("pages/1_📤_提取單據.py",
-                      label="提取單據", icon="📤")
-        st.page_link("pages/2_📋_單據紀錄.py",
-                      label="　└ 單據紀錄", icon="📋")
-
-        st.markdown(
-            '<div style="margin-top:0.8rem;color:#FFC700;font-size:0.7rem;'
-            'font-weight:700;letter-spacing:0.15em;'
-            'border-top:1px solid rgba(255,255,255,0.2);'
-            'padding-top:0.6rem;">💰 個人記賬</div>',
-            unsafe_allow_html=True,
-        )
+                      label="單據處理", icon="📤")
         st.page_link("pages/3_💰_個人記賬.py",
                       label="個人記賬", icon="💰")
-        st.page_link("pages/4_🎯_預算.py",
-                      label="　└ 預算與實績", icon="🎯")
-        st.page_link("pages/5_📈_財務報表.py",
-                      label="　└ 財務報表", icon="📈")
-        st.page_link("pages/6_🏢_報銷追蹤.py",
-                      label="　└ 報銷追蹤", icon="🏢")
-
-        st.markdown(
-            '<div style="margin-top:0.8rem;color:#FFC700;font-size:0.7rem;'
-            'font-weight:700;letter-spacing:0.15em;'
-            'border-top:1px solid rgba(255,255,255,0.2);'
-            'padding-top:0.6rem;">⚙️ 系統</div>',
-            unsafe_allow_html=True,
-        )
         st.page_link("pages/7_⚙️_設定.py",
-                      label="進階設定", icon="⚙️")
-        st.page_link("pages/7_⚙️_設定.py",
-                      label="　└ 📖 使用教學",
-                      help="點擊後進入「進階設定」頁面，"
-                            "切換至「📖 使用教學」分頁")
+                      label="系統設定", icon="⚙️")
         st.divider()
+
+
+# === 子頁面分組（用於頁面頂部 sub-nav）===
+SUBPAGE_GROUPS = {
+    "invoice": [
+        ("提取單據", "pages/1_📤_提取單據.py", "📤"),
+        ("單據紀錄", "pages/2_📋_單據紀錄.py", "📋"),
+    ],
+    "ledger": [
+        ("個人記賬", "pages/3_💰_個人記賬.py", "💰"),
+        ("預算與實績", "pages/4_🎯_預算.py", "🎯"),
+        ("財務報表", "pages/5_📈_財務報表.py", "📈"),
+        ("報銷追蹤", "pages/6_🏢_報銷追蹤.py", "🏢"),
+    ],
+}
+
+
+def render_subpage_nav(group_key: str):
+    """渲染頁面頂部嘅子頁面導航（一排按鈕）
+
+    Args:
+        group_key: SUBPAGE_GROUPS 嘅 key（"invoice" / "ledger"）
+    """
+    group = SUBPAGE_GROUPS.get(group_key, [])
+    if not group:
+        return
+    cols = st.columns(len(group))
+    for col, (label, page_path, icon) in zip(cols, group):
+        with col:
+            st.page_link(
+                page_path,
+                label=f"{icon} {label}",
+                use_container_width=True,
+            )
+    st.divider()
 
 
 def render_doraemon_fab():
@@ -385,4 +385,5 @@ __all__ = [
     "C", "PALETTE",
     "app_header", "kpi_card", "init_dbs", "check_api_key",
     "glass_card_open", "glass_card_close", "plotly_glass_layout",
+    "render_subpage_nav", "SUBPAGE_GROUPS",
 ]

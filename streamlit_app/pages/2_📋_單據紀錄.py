@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import streamlit as st
 import pandas as pd
 
-from streamlit_app._common import C, app_header, init_dbs
+from streamlit_app._common import C, app_header, init_dbs, render_subpage_nav
 
 st.set_page_config(
     page_title="單據紀錄", page_icon="📋", layout="wide",
@@ -14,7 +14,8 @@ st.set_page_config(
 )
 init_dbs()
 
-app_header("單據紀錄", "📋", "所有經 AI 提取的單據資料")
+app_header("單據處理", "📋", "所有經 AI 提取的單據資料")
+render_subpage_nav("invoice")
 
 import database as invdb
 import excel_exporter
@@ -127,29 +128,66 @@ if filtered:
         with preview_col:
             st.markdown(f"### 📷 單據預覽 #{inv['id']}")
             src = inv.get("source_file")
-            if src:
-                src_path = Path(src)
-                if src_path.exists():
-                    suffix = src_path.suffix.lower()
-                    if suffix in {".jpg", ".jpeg", ".png", ".bmp",
-                                   ".webp", ".tiff"}:
-                        st.image(str(src_path),
-                                  caption=src_path.name,
+            src_path = Path(src) if src else None
+            image_shown = False
+
+            if src_path and src_path.exists():
+                suffix = src_path.suffix.lower()
+                if suffix in {".jpg", ".jpeg", ".png", ".bmp",
+                              ".webp", ".tiff"}:
+                    st.image(str(src_path),
+                              caption=src_path.name,
+                              use_container_width=True)
+                    image_shown = True
+                elif suffix == ".pdf":
+                    # 嘗試 render PDF 第一頁
+                    try:
+                        from pdf_utils import pdf_first_page_to_image
+                        img = pdf_first_page_to_image(src_path)
+                        st.image(img,
+                                  caption=f"📄 {src_path.name}（第 1 頁）",
                                   use_container_width=True)
-                    elif suffix == ".pdf":
-                        st.info(f"📄 PDF：{src_path.name}")
-                        st.caption("（PDF 預覽請按下方按鈕開啟原檔）")
-                    else:
-                        st.caption(f"檔案：{src_path.name}")
-                    st.caption(f"📁 路徑：`{src_path}`")
-                else:
+                        image_shown = True
+                    except Exception as ex:
+                        st.info(
+                            f"📄 PDF：{src_path.name}\n\n"
+                            f"無法 render 預覽：{ex}"
+                        )
+
+            # 圖片無法顯示 → 允許重新上傳
+            if not image_shown:
+                if src and not (src_path and src_path.exists()):
                     st.warning(
-                        f"⚠️ 原始檔案已不存在或位置改變：\n\n`{src}`"
+                        f"⚠️ 原始檔案已不存在或位置改變"
                     )
-            else:
-                st.caption(
-                    "（此單據未儲存原始檔案路徑，可能是舊版本提取的）"
+                    st.caption(f"原路徑：`{src}`")
+                else:
+                    st.caption("（此單據沒有關聯的原始檔案）")
+
+                # 重新上傳介面
+                new_img = st.file_uploader(
+                    "📷 重新上傳此單據圖片",
+                    type=["jpg", "jpeg", "png", "bmp",
+                          "webp", "tiff", "pdf"],
+                    key=f"reup_{inv_id}",
                 )
+                if new_img is not None:
+                    # 儲存到 outputs/invoice_images/
+                    save_dir = (Path(__file__).resolve().parents[2]
+                                / "outputs" / "invoice_images")
+                    save_dir.mkdir(parents=True, exist_ok=True)
+                    save_path = save_dir / (
+                        f"{inv_id}_{new_img.name}"
+                    )
+                    save_path.write_bytes(new_img.getvalue())
+                    # 更新 DB
+                    updated = dict(inv)
+                    updated["source_file"] = str(save_path)
+                    invdb.update_invoice(inv_id, updated)
+                    st.success(
+                        f"✅ 已關聯新圖片：{save_path.name}"
+                    )
+                    st.rerun()
 
         with edit_col:
             st.subheader(f"✏️ 編輯 #{inv['id']}")
@@ -170,8 +208,46 @@ if filtered:
             with ec2:
                 currency = st.text_input("幣別",
                                           inv.get("currency") or "HKD")
-                payment = st.text_input("付款方式",
-                                         inv.get("payment_method") or "")
+
+                # === 付款方式：dropdown + 自訂選項 ===
+                from personal_finance import db as _pfdb
+                alias_keywords = sorted({
+                    a["keyword"] for a in _pfdb.list_payment_aliases()
+                })
+                past_methods = sorted({
+                    i.get("payment_method") or ""
+                    for i in all_invoices
+                    if i.get("payment_method")
+                })
+                payment_options = sorted(
+                    set(alias_keywords) | set(past_methods)
+                )
+                # 確保目前值在 options 中
+                cur_payment = inv.get("payment_method") or ""
+                if cur_payment and cur_payment not in payment_options:
+                    payment_options.insert(0, cur_payment)
+                payment_options = ["✏️ 自訂輸入..."] + payment_options
+
+                # 找出目前值的 index
+                if cur_payment in payment_options:
+                    pay_idx = payment_options.index(cur_payment)
+                else:
+                    pay_idx = 0
+                payment_sel = st.selectbox(
+                    "付款方式",
+                    payment_options,
+                    index=pay_idx,
+                    help=f"已知選項：{len(payment_options)-1} 個"
+                          f"（含付款對應 + 過往單據）",
+                )
+                if payment_sel == "✏️ 自訂輸入...":
+                    payment = st.text_input(
+                        "輸入新的付款方式",
+                        value=cur_payment,
+                        key=f"custom_pay_{inv_id}",
+                    )
+                else:
+                    payment = payment_sel
                 exp_type = st.selectbox(
                     "類型", ["私人", "公司報銷", "可扣稅"],
                     index=["私人", "公司報銷", "可扣稅"].index(
