@@ -1,31 +1,34 @@
 # Streamlit Cloud 專用 requirements
-# 只包含網頁版需要的套件，排除 Windows 專用 / 桌面專用
-# 部署時 Streamlit Cloud 會優先讀 streamlit_app/requirements.txt（而非 repo 根目錄那個）
+# 用 >= 而非 ==，等 pip 自動揀 Python 3.13 Linux wheel
+# 避免從源碼編譯（pandas 編譯需要 5-10 分鐘，可能 fail）
 
 # === 核心 Web 框架 ===
-streamlit==1.57.0
+streamlit>=1.57.0
 
-# === 資料處理 ===
-pandas==2.2.3
-numpy==2.1.3
-pyarrow==18.1.0
-pytz==2026.2
+# === 資料處理（>=2.2.4 開始有完整 Python 3.13 wheels）===
+pandas>=2.2.4
+numpy>=2.2.0
+pyarrow>=18.0.0
+pytz>=2024.2
 
 # === 視覺化 ===
-plotly==6.7.0
+plotly>=6.0.0
 
 # === AI / OCR ===
-google-genai==2.6.0
+google-genai>=2.0.0
 
 # === 環境變數 ===
-python-dotenv==1.2.2
+python-dotenv>=1.0.0
 
 # === Excel 匯出 ===
-openpyxl==3.1.5
-xlsxwriter==3.2.9
+openpyxl>=3.1.0
+xlsxwriter>=3.2.0
 
 # === 圖片處理（單據預覽 + AI extractor）===
-Pillow==12.2.0
+Pillow>=11.0.0
 
 # === PDF 處理（純 Python，不需 poppler）===
-pypdfium2==5.8.0
+pypdfium2>=4.0.0
+
+# === Supabase / PostgreSQL（雲端 DB）===
+psycopg[binary]>=3.2.0
