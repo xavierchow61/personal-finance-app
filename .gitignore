@@ -24,6 +24,7 @@ outputs/
 testing/
 test/
 tests/
+data/        # 多用戶模式下每位用戶嘅 DB（含個人財務資料）
 *.xlsx
 *.xls
 *.csv

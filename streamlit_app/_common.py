@@ -348,12 +348,20 @@ def render_doraemon_fab():
 
 def app_header(title: str = "", emoji: str = "💰",
                 subtitle: str = ""):
-    """每個頁面頂部標題 — 自動注入樣式 + 共用側欄
+    """每個頁面頂部標題 — 自動注入樣式 + 共用側欄 + 登入閘門
 
-    若 title 為空字串，則跳過標題渲染（用於 Home 等不想顯示標題的頁面）
+    流程：
+    1. 注入全域 CSS
+    2. require_login()：若有設定用戶，未登入則顯示登入畫面並 st.stop()
+    3. 渲染側欄（含用戶資訊 + 登出按鈕）
+    4. 若 title 非空，渲染玻璃漸層標題
     """
     inject_glass_style()
+    # 登入閘門（secrets 無設用戶 = 跳過，本地開發模式）
+    from auth import require_login, render_logout_section
+    require_login()
     render_sidebar_nav()
+    render_logout_section()
     if title:
         glass_title(title, emoji, subtitle)
     # 4D 口袋 FAB 已移除（與側欄重複，浪費版面）

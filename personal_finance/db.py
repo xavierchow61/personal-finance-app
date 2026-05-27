@@ -7,9 +7,10 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 
-from config import BASE_DIR
+from config import BASE_DIR, get_personal_finance_db_path
 
 
+# 預設路徑（向後兼容）；實際讀寫時用 get_personal_finance_db_path()
 DB_PATH = BASE_DIR / "personal_finance.db"
 
 
@@ -137,7 +138,9 @@ CREATE TABLE IF NOT EXISTS projects (
 
 @contextmanager
 def _conn():
-    con = sqlite3.connect(str(DB_PATH))
+    # 動態取目前用戶嘅 DB；無登入則跌回 BASE_DIR/personal_finance.db
+    db_path = get_personal_finance_db_path()
+    con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     try:

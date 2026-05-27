@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from config import DB_PATH
+from config import DB_PATH, get_invoices_db_path
 
 
 # === 報銷類型 ===
@@ -43,7 +43,9 @@ INDEXES = [
 
 @contextmanager
 def _conn():
-    con = sqlite3.connect(str(DB_PATH))
+    # 動態取目前用戶嘅 DB（多用戶模式）；無登入時跌回 BASE_DIR/invoices.db
+    db_path = get_invoices_db_path()
+    con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
     try:
         yield con

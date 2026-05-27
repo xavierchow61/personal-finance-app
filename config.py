@@ -29,7 +29,37 @@ GEMINI_MODEL = "gemini-2.5-flash"  # 支援 Vision，速度快，免費 tier
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
-DB_PATH = BASE_DIR / "invoices.db"
+DB_PATH = BASE_DIR / "invoices.db"   # 預設路徑（沒登入時用）
+
+
+def get_user_data_dir(user: str | None = None) -> Path:
+    """取得指定用戶嘅 data 資料夾。
+
+    若 user=None：嘗試從 Streamlit session 取目前登入用戶。
+    若仍是 None：回 BASE_DIR（向後兼容：本地 / 未登入模式）。
+    """
+    if user is None:
+        try:
+            import streamlit as st
+            user = st.session_state.get("auth_user")
+        except Exception:
+            user = None
+
+    if user:
+        d = BASE_DIR / "data" / user
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    return BASE_DIR
+
+
+def get_invoices_db_path() -> Path:
+    """目前用戶嘅 invoices.db 路徑"""
+    return get_user_data_dir() / "invoices.db"
+
+
+def get_personal_finance_db_path() -> Path:
+    """目前用戶嘅 personal_finance.db 路徑"""
+    return get_user_data_dir() / "personal_finance.db"
 
 # === 類別預設清單（AI 會 reference 呢個 list，但可以加新類別）===
 CATEGORIES = [
