@@ -135,10 +135,23 @@ def inject_glass_style():
         background: rgba(255,255,255,0.12);
         border: 1px solid rgba(255,255,255,0.25);
         border-radius: 10px;
-        padding: 8px 12px !important;
-        margin-bottom: 6px;
+        padding: 6px 12px !important;
+        margin-bottom: 3px;
         transition: all 0.25s ease;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+        font-size: 0.95rem;
+    }}
+    /* 側欄整體更緊湊（減少 scroll）*/
+    [data-testid="stSidebar"] [data-testid="stSidebarUserContent"],
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {{
+        padding-top: 0.6rem !important;
+        padding-bottom: 0.6rem !important;
+    }}
+    [data-testid="stSidebar"] hr {{
+        margin: 0.6rem 0 !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {{
+        margin-bottom: 0 !important;
     }}
     [data-testid="stSidebar"] a:hover {{
         background: rgba(255,255,255,0.28) !important;
@@ -404,6 +417,48 @@ def inject_glass_style():
     [data-testid="stImage"] img {{
         border-radius: 14px;
         box-shadow: 0 8px 24px rgba(0,120,186,0.3);
+    }}
+
+    /* ============ Sub-page 大按鈕（頁面頂部導航）============ */
+    .main [data-testid="stPageLink"] a,
+    .main [data-testid="stPageLink-NavLink"] {{
+        background: linear-gradient(135deg,
+            rgba(0,166,224,0.15) 0%,
+            rgba(0,120,186,0.08) 100%) !important;
+        border: 2px solid rgba(0,166,224,0.4) !important;
+        border-radius: 14px !important;
+        padding: 0.85rem 1.4rem !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        color: {PALETTE['accent_dark']} !important;
+        box-shadow: 0 4px 14px rgba(0,120,186,0.15),
+                    inset 0 1px 0 rgba(255,255,255,0.6) !important;
+        transition: all 0.25s ease !important;
+        text-align: center !important;
+        justify-content: center !important;
+        display: flex !important;
+        align-items: center !important;
+        margin-bottom: 0.3rem !important;
+    }}
+    .main [data-testid="stPageLink"] a *,
+    .main [data-testid="stPageLink-NavLink"] * {{
+        color: {PALETTE['accent_dark']} !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
+    }}
+    .main [data-testid="stPageLink"] a:hover,
+    .main [data-testid="stPageLink-NavLink"]:hover {{
+        background: linear-gradient(135deg,
+            {PALETTE['accent']} 0%,
+            {PALETTE['accent_dark']} 100%) !important;
+        border-color: {PALETTE['accent_dark']} !important;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 22px rgba(0,120,186,0.4),
+                    inset 0 1px 0 rgba(255,255,255,0.4) !important;
+    }}
+    .main [data-testid="stPageLink"] a:hover *,
+    .main [data-testid="stPageLink-NavLink"]:hover * {{
+        color: white !important;
     }}
 
     /* ============ Code 區塊 ============ */

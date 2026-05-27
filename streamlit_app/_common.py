@@ -39,16 +39,16 @@ C = {
 def render_sidebar_nav():
     """共用玻璃側欄 — 哆啦 A 夢品牌 + 6 個快速入口"""
     with st.sidebar:
-        # 哆啦 A 夢風品牌標題 — 鈴鐺黃 + 白字
+        # 哆啦 A 夢風品牌標題 — 鈴鐺黃 + 白字（精簡版）
         st.markdown(
-            '<div style="text-align:center;padding:1rem 0 0.5rem 0;'
-            'color:white;font-size:1.45rem;font-weight:800;'
+            '<div style="text-align:center;padding:0.3rem 0 0.1rem 0;'
+            'color:white;font-size:1.25rem;font-weight:800;'
             'letter-spacing:0.04em;'
             'text-shadow:0 2px 6px rgba(0,0,0,0.2);">'
             '🔔 哆啦理財 🐱</div>'
             '<div style="text-align:center;color:#FFC700;'
-            'font-size:0.78rem;font-weight:600;letter-spacing:0.18em;'
-            'margin-bottom:1rem;">PERSONAL FINANCE</div>',
+            'font-size:0.7rem;font-weight:600;letter-spacing:0.18em;'
+            'margin-bottom:0.5rem;">PERSONAL FINANCE</div>',
             unsafe_allow_html=True,
         )
         # === 精簡側欄：只 3 個 hub + 儀表板 ===
@@ -346,11 +346,16 @@ def render_doraemon_fab():
     st.markdown(html, unsafe_allow_html=True)
 
 
-def app_header(title: str, emoji: str = "💰", subtitle: str = ""):
-    """每個頁面頂部標題 — 自動注入樣式 + 共用側欄"""
+def app_header(title: str = "", emoji: str = "💰",
+                subtitle: str = ""):
+    """每個頁面頂部標題 — 自動注入樣式 + 共用側欄
+
+    若 title 為空字串，則跳過標題渲染（用於 Home 等不想顯示標題的頁面）
+    """
     inject_glass_style()
     render_sidebar_nav()
-    glass_title(title, emoji, subtitle)
+    if title:
+        glass_title(title, emoji, subtitle)
     # 4D 口袋 FAB 已移除（與側欄重複，浪費版面）
     # 如需復活，呼叫：render_doraemon_fab()
 

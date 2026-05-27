@@ -15,8 +15,8 @@ st.set_page_config(
 
 init_dbs()
 
-app_header("個人理財 儀表板", "💎",
-            "AI 提取單據 · 自動入賬 · 預算追蹤 · 隨時隨地查閱")
+# 儀表板不顯示頁面標題（節省版面，直接顯示 KPI）
+app_header()
 
 check_api_key()
 
