@@ -51,15 +51,50 @@ def render_sidebar_nav():
             'margin-bottom:1rem;">PERSONAL FINANCE</div>',
             unsafe_allow_html=True,
         )
-        st.markdown("### 🚀 快速入口")
+        # === 主要入口 ===
         st.page_link("Home.py", label="儀表板", icon="🏠")
-        st.page_link("pages/1_📤_提取單據.py", label="提取單據", icon="📤")
-        st.page_link("pages/2_📋_單據紀錄.py", label="單據紀錄", icon="📋")
-        st.page_link("pages/3_💰_個人記賬.py", label="個人記賬", icon="💰")
-        st.page_link("pages/4_🎯_預算.py", label="預算", icon="🎯")
-        st.page_link("pages/5_📈_財務報表.py", label="財務報表", icon="📈")
-        st.page_link("pages/6_🏢_報銷追蹤.py", label="報銷追蹤", icon="🏢")
-        st.page_link("pages/7_⚙️_設定.py", label="進階設定", icon="⚙️")
+
+        st.markdown(
+            '<div style="margin-top:0.8rem;color:#FFC700;font-size:0.7rem;'
+            'font-weight:700;letter-spacing:0.15em;'
+            'border-top:1px solid rgba(255,255,255,0.2);'
+            'padding-top:0.6rem;">📤 單據處理</div>',
+            unsafe_allow_html=True,
+        )
+        st.page_link("pages/1_📤_提取單據.py",
+                      label="提取單據", icon="📤")
+        st.page_link("pages/2_📋_單據紀錄.py",
+                      label="　└ 單據紀錄", icon="📋")
+
+        st.markdown(
+            '<div style="margin-top:0.8rem;color:#FFC700;font-size:0.7rem;'
+            'font-weight:700;letter-spacing:0.15em;'
+            'border-top:1px solid rgba(255,255,255,0.2);'
+            'padding-top:0.6rem;">💰 個人記賬</div>',
+            unsafe_allow_html=True,
+        )
+        st.page_link("pages/3_💰_個人記賬.py",
+                      label="個人記賬", icon="💰")
+        st.page_link("pages/4_🎯_預算.py",
+                      label="　└ 預算與實績", icon="🎯")
+        st.page_link("pages/5_📈_財務報表.py",
+                      label="　└ 財務報表", icon="📈")
+        st.page_link("pages/6_🏢_報銷追蹤.py",
+                      label="　└ 報銷追蹤", icon="🏢")
+
+        st.markdown(
+            '<div style="margin-top:0.8rem;color:#FFC700;font-size:0.7rem;'
+            'font-weight:700;letter-spacing:0.15em;'
+            'border-top:1px solid rgba(255,255,255,0.2);'
+            'padding-top:0.6rem;">⚙️ 系統</div>',
+            unsafe_allow_html=True,
+        )
+        st.page_link("pages/7_⚙️_設定.py",
+                      label="進階設定", icon="⚙️")
+        st.page_link("pages/7_⚙️_設定.py",
+                      label="　└ 📖 使用教學",
+                      help="點擊後進入「進階設定」頁面，"
+                            "切換至「📖 使用教學」分頁")
         st.divider()
 
 
