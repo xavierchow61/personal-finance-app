@@ -125,9 +125,65 @@ def inject_glass_style():
         top: 0 !important;
         height: 100vh !important;
     }}
-    /* 隱藏側欄收合按鈕，避免用家不小心收起 */
+    /* 桌面版：隱藏側欄收合按鈕（避免唔小心收起）*/
     [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
     [data-testid="stSidebarCollapsedControl"] {{ display: none !important; }}
+
+    /* ============ 📱 手機版（≤768px）特殊處理 ============ */
+    @media (max-width: 768px) {{
+        /* 顯示返收合按鈕，手機用家需要可以關側欄 */
+        [data-testid="stSidebarCollapseButton"] {{
+            display: block !important;
+            position: fixed !important;
+            top: 8px !important;
+            right: 8px !important;
+            z-index: 10000 !important;
+            background: white !important;
+            border-radius: 50% !important;
+            width: 36px !important;
+            height: 36px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        }}
+        [data-testid="stSidebarCollapsedControl"] {{
+            display: block !important;
+            position: fixed !important;
+            top: 8px !important;
+            left: 8px !important;
+            z-index: 10000 !important;
+            background: {PALETTE['accent']} !important;
+            color: white !important;
+            border-radius: 50% !important;
+            width: 36px !important;
+            height: 36px !important;
+            box-shadow: 0 4px 12px rgba(0,120,186,0.5) !important;
+        }}
+
+        /* 側欄改為 overlay（覆蓋內容，不擠走）*/
+        [data-testid="stSidebar"] {{
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            height: 100vh !important;
+            width: 80vw !important;
+            max-width: 320px !important;
+            z-index: 9999 !important;
+            box-shadow: 6px 0 30px rgba(0,0,0,0.4) !important;
+            transition: transform 0.3s ease !important;
+        }}
+
+        /* 主內容區唔被 sidebar 擠走 */
+        .main .block-container {{
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 3rem !important;
+        }}
+
+        /* 子頁面按鈕 row 縮細啲 */
+        .main [data-testid="stPageLink"] a {{
+            padding: 0.6rem 1rem !important;
+            font-size: 0.9rem !important;
+        }}
+    }}
     [data-testid="stSidebar"] * {{
         color: {PALETTE['sidebar_text']} !important;
     }}
