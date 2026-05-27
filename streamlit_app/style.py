@@ -181,23 +181,38 @@ def inject_glass_style():
     }}
 
     /* 側欄內嘅按鈕（如登出）— 白底深字，與藍底側欄形成對比 */
-    [data-testid="stSidebar"] .stButton > button,
-    [data-testid="stSidebar"] .stButton > button > * {{
+    [data-testid="stSidebar"] .stButton button {{
         background: rgba(255,255,255,0.95) !important;
-        color: {PALETTE['text']} !important;
         border: 1px solid rgba(255,255,255,0.4) !important;
-        font-weight: 600 !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.18),
                     inset 0 1px 0 rgba(255,255,255,0.8) !important;
     }}
-    [data-testid="stSidebar"] .stButton > button:hover,
-    [data-testid="stSidebar"] .stButton > button:hover > * {{
+    /* 覆寫所有後代元素嘅文字顏色（包括 p / span / div / icon）*/
+    [data-testid="stSidebar"] .stButton button,
+    [data-testid="stSidebar"] .stButton button p,
+    [data-testid="stSidebar"] .stButton button span,
+    [data-testid="stSidebar"] .stButton button div,
+    [data-testid="stSidebar"] .stButton button svg,
+    [data-testid="stSidebar"] .stButton button * {{
+        color: {PALETTE['text']} !important;
+        font-weight: 600 !important;
+        fill: {PALETTE['text']} !important;
+    }}
+    /* Hover 狀態 */
+    [data-testid="stSidebar"] .stButton button:hover {{
         background: white !important;
-        color: {PALETTE['accent_dark']} !important;
         border-color: white !important;
         transform: translateY(-1px);
         box-shadow: 0 4px 14px rgba(0,0,0,0.25),
                     inset 0 1px 0 rgba(255,255,255,1) !important;
+    }}
+    [data-testid="stSidebar"] .stButton button:hover,
+    [data-testid="stSidebar"] .stButton button:hover p,
+    [data-testid="stSidebar"] .stButton button:hover span,
+    [data-testid="stSidebar"] .stButton button:hover div,
+    [data-testid="stSidebar"] .stButton button:hover * {{
+        color: {PALETTE['accent_dark']} !important;
+        fill: {PALETTE['accent_dark']} !important;
     }}
 
     /* ============ Dataframe（白肚皮卡）============ */
