@@ -180,39 +180,31 @@ def inject_glass_style():
                     0 4px 14px rgba(0,0,0,0.15);
     }}
 
-    /* 側欄內嘅按鈕（如登出）— 白底深字，與藍底側欄形成對比 */
-    [data-testid="stSidebar"] .stButton button {{
-        background: rgba(255,255,255,0.95) !important;
-        border: 1px solid rgba(255,255,255,0.4) !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.18),
-                    inset 0 1px 0 rgba(255,255,255,0.8) !important;
-    }}
-    /* 覆寫所有後代元素嘅文字顏色（包括 p / span / div / icon）*/
-    [data-testid="stSidebar"] .stButton button,
-    [data-testid="stSidebar"] .stButton button p,
-    [data-testid="stSidebar"] .stButton button span,
-    [data-testid="stSidebar"] .stButton button div,
-    [data-testid="stSidebar"] .stButton button svg,
-    [data-testid="stSidebar"] .stButton button * {{
+    /* === 登出連結（純 HTML <a>） — 白底深字 === */
+    /* 用 href="?logout=1" 識別，比 [data-testid="stSidebar"] * 更高 specificity */
+    [data-testid="stSidebar"] a[href*="logout=1"],
+    [data-testid="stSidebar"] a[href*="logout=1"] * {{
         color: {PALETTE['text']} !important;
-        font-weight: 600 !important;
-        fill: {PALETTE['text']} !important;
-    }}
-    /* Hover 狀態 */
-    [data-testid="stSidebar"] .stButton button:hover {{
         background: white !important;
-        border-color: white !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 14px rgba(0,0,0,0.25),
-                    inset 0 1px 0 rgba(255,255,255,1) !important;
+        text-decoration: none !important;
+        font-weight: 700 !important;
+        border-radius: 10px !important;
     }}
-    [data-testid="stSidebar"] .stButton button:hover,
-    [data-testid="stSidebar"] .stButton button:hover p,
-    [data-testid="stSidebar"] .stButton button:hover span,
-    [data-testid="stSidebar"] .stButton button:hover div,
-    [data-testid="stSidebar"] .stButton button:hover * {{
+    [data-testid="stSidebar"] a[href*="logout=1"]:hover,
+    [data-testid="stSidebar"] a[href*="logout=1"]:hover * {{
         color: {PALETTE['accent_dark']} !important;
-        fill: {PALETTE['accent_dark']} !important;
+        background: white !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.25) !important;
+    }}
+    /* 避免被通用 [data-testid="stSidebar"] a 嘅 glass button style 覆蓋 */
+    [data-testid="stSidebar"] a[href*="logout=1"] {{
+        padding: 10px 16px !important;
+        margin-top: 8px !important;
+        border: 1px solid rgba(255,255,255,0.4) !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
+        display: block !important;
+        text-align: center !important;
     }}
 
     /* ============ Dataframe（白肚皮卡）============ */

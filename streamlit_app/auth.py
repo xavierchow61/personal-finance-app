@@ -97,7 +97,17 @@ def require_login():
     - 若 secrets 沒有設用戶 → 跳過（本地開發向後兼容）
     - 若未登入 → 渲染登入畫面 + st.stop()
     - 若已登入 → 繼續
+    - 處理 ?logout=1 query param（用 HTML link 登出）
     """
+    # 偵測登出 query param（由側欄登出 link 觸發）
+    try:
+        if st.query_params.get("logout") == "1":
+            logout()
+            st.query_params.clear()
+            st.rerun()
+    except Exception:
+        pass
+
     users = _get_users()
     if not users:
         # 沒設定用戶 = 不要求登入（本地 / demo 模式）
@@ -206,7 +216,7 @@ def _render_login_page():
 
 
 def render_logout_section():
-    """於側欄顯示目前用戶 + 登出按鈕"""
+    """於側欄顯示目前用戶 + 登出按鈕（純 HTML，避開 Streamlit button CSS 鬥爭）"""
     user = get_current_user()
     if not user:
         return
@@ -223,10 +233,23 @@ def render_logout_section():
                 <span style="opacity:0.7;">👤 已登入</span><br>
                 <span style="font-weight:700;font-size:1rem;">{user}</span>
             </div>
+
+            <a href="?logout=1" target="_self"
+               style="display:block;
+                      background:white;
+                      color:#1A1A2E !important;
+                      text-decoration:none !important;
+                      text-align:center;
+                      padding:10px 16px;
+                      border-radius:10px;
+                      margin-top:8px;
+                      font-weight:700;
+                      font-size:0.95rem;
+                      border:1px solid rgba(255,255,255,0.4);
+                      box-shadow:0 2px 8px rgba(0,0,0,0.18);
+                      transition:all 0.2s ease;">
+                🚪 登出
+            </a>
             """,
             unsafe_allow_html=True,
         )
-        if st.button("🚪 登出", use_container_width=True,
-                      key="logout_btn"):
-            logout()
-            st.rerun()
