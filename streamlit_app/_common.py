@@ -312,11 +312,12 @@ def render_doraemon_fab():
 
 
 def app_header(title: str, emoji: str = "💰", subtitle: str = ""):
-    """每個頁面頂部標題 — 自動注入樣式 + 共用側欄 + 4D 口袋"""
+    """每個頁面頂部標題 — 自動注入樣式 + 共用側欄"""
     inject_glass_style()
     render_sidebar_nav()
     glass_title(title, emoji, subtitle)
-    render_doraemon_fab()
+    # 4D 口袋 FAB 已移除（與側欄重複，浪費版面）
+    # 如需復活，呼叫：render_doraemon_fab()
 
 
 def kpi_card(col, label: str, value, color: str = None, emoji: str = "",
