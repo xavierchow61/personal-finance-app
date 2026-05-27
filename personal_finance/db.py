@@ -133,6 +133,27 @@ CREATE TABLE IF NOT EXISTS projects (
     icon TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============ CREDIT CARDS ============
+-- 信用卡額外資料（額度、結算日、還款日、利率…）
+-- account_code 必須對應一個 type='liability' 嘅 account
+CREATE TABLE IF NOT EXISTS credit_cards (
+    card_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_code TEXT UNIQUE NOT NULL,
+    card_last4 TEXT,                            -- 「8989」
+    credit_limit REAL,                          -- 信用額度（HKD）
+    statement_day INTEGER,                      -- 月結日 1-31
+    due_day INTEGER,                            -- 還款限期日 1-31
+    interest_rate REAL,                         -- 年利率（例 0.32）
+    annual_fee REAL,                            -- 年費
+    rewards TEXT,                               -- 回贈/里數說明
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_code) REFERENCES accounts(code)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cc_account ON credit_cards(account_code);
 """
 
 
@@ -631,3 +652,69 @@ def list_fx_rates() -> list[dict]:
             ORDER BY currency
         """).fetchall()
         return [dict(r) for r in rows]
+
+
+# ============================================================
+# CREDIT CARDS
+# ============================================================
+def list_credit_cards() -> list[dict]:
+    """列出所有信用卡額外資料（JOIN accounts 帶埋名稱）"""
+    init_db()
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT cc.*, a.name AS account_name, a.icon AS account_icon,
+                   a.currency AS account_currency, a.is_active
+            FROM credit_cards cc
+            JOIN accounts a ON a.code = cc.account_code
+            ORDER BY a.sort_order, a.name
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_credit_card(account_code: str) -> dict | None:
+    """揾某 account 嘅信用卡資料"""
+    init_db()
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM credit_cards WHERE account_code=?",
+            (account_code,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def upsert_credit_card(account_code: str,
+                        card_last4: str | None = None,
+                        credit_limit: float | None = None,
+                        statement_day: int | None = None,
+                        due_day: int | None = None,
+                        interest_rate: float | None = None,
+                        annual_fee: float | None = None,
+                        rewards: str | None = None,
+                        notes: str | None = None):
+    """新增 / 更新信用卡資料"""
+    init_db()
+    with _conn() as c:
+        c.execute("""
+            INSERT INTO credit_cards
+              (account_code, card_last4, credit_limit, statement_day,
+               due_day, interest_rate, annual_fee, rewards, notes)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(account_code) DO UPDATE SET
+              card_last4=excluded.card_last4,
+              credit_limit=excluded.credit_limit,
+              statement_day=excluded.statement_day,
+              due_day=excluded.due_day,
+              interest_rate=excluded.interest_rate,
+              annual_fee=excluded.annual_fee,
+              rewards=excluded.rewards,
+              notes=excluded.notes
+        """, (account_code, card_last4, credit_limit, statement_day,
+              due_day, interest_rate, annual_fee, rewards, notes))
+
+
+def delete_credit_card(account_code: str):
+    """刪信用卡額外資料（唔影響原 account）"""
+    init_db()
+    with _conn() as c:
+        c.execute("DELETE FROM credit_cards WHERE account_code=?",
+                   (account_code,))

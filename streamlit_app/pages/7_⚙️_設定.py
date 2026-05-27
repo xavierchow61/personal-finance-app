@@ -19,9 +19,10 @@ app_header("進階設定", "⚙️",
 
 from personal_finance import db as pfdb, seed as pfseed
 
-tab0, tab_acc, tab1, tab2, tab3, tab4 = st.tabs([
+tab0, tab_acc, tab_cc, tab1, tab2, tab3, tab4 = st.tabs([
     "📖 使用教學",
     "🏦 帳戶管理",
+    "💳 信用卡",
     "💱 外幣匯率",
     "🔗 付款方式對應",
     "🔒 期間鎖定",
@@ -463,6 +464,288 @@ with tab_acc:
                         st.success(
                             f"✅ 建立成功：{na_icon or ''} {na_name} "
                             f"({na_code.upper()})"
+                        )
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"建立失敗：{ex}")
+
+
+# ============ Tab 信用卡管理 ============
+with tab_cc:
+    st.caption(
+        "管理信用卡額外資訊：信用額度、月結日、還款限期、利率、年費、回贈方式。"
+        "新增前須先在「🏦 帳戶管理」建立負債類型帳戶。"
+    )
+
+    from personal_finance import reports as _pfr
+    from datetime import date as _d, timedelta as _td
+
+    def _next_due_date(due_day: int | None,
+                        today: _d | None = None) -> _d | None:
+        """計算今日之後最近嘅還款日"""
+        if not due_day:
+            return None
+        today = today or _d.today()
+        try:
+            target = today.replace(day=due_day)
+        except ValueError:
+            # 如該月無呢一日（如 30/31）→ 用該月最後一日
+            import calendar
+            last = calendar.monthrange(today.year, today.month)[1]
+            target = today.replace(day=min(due_day, last))
+        if target <= today:
+            # 已過 → 跳下個月
+            month = today.month + 1
+            year = today.year
+            if month > 12:
+                month = 1
+                year += 1
+            try:
+                target = today.replace(year=year, month=month,
+                                        day=due_day)
+            except ValueError:
+                import calendar
+                last = calendar.monthrange(year, month)[1]
+                target = today.replace(year=year, month=month,
+                                        day=min(due_day, last))
+        return target
+
+    cards = pfdb.list_credit_cards()
+
+    if cards:
+        # 計算每張卡嘅 utilization + 距離還款日
+        rows_disp = []
+        today = _d.today()
+        for c_meta in cards:
+            code = c_meta["account_code"]
+            balance_hkd = abs(_pfr.account_balance(code, in_hkd=True))
+            limit = c_meta.get("credit_limit") or 0
+            util_pct = (balance_hkd / limit * 100) if limit > 0 else 0
+            next_due = _next_due_date(c_meta.get("due_day"), today)
+            days_left = (next_due - today).days if next_due else None
+
+            # 狀態
+            if util_pct > 80:
+                util_emoji = "🔴"
+            elif util_pct > 50:
+                util_emoji = "🟡"
+            else:
+                util_emoji = "🟢"
+            if days_left is not None and days_left <= 7:
+                due_emoji = "⚠️"
+            else:
+                due_emoji = "✅"
+
+            rows_disp.append({
+                "代碼": code,
+                "卡名": f"{c_meta.get('account_icon') or ''} "
+                          f"{c_meta['account_name']}",
+                "末 4 碼": c_meta.get("card_last4") or "—",
+                "限額": limit,
+                "已用": balance_hkd,
+                "使用率": util_pct,
+                "狀態": util_emoji,
+                "月結日": c_meta.get("statement_day") or "—",
+                "還款日": c_meta.get("due_day") or "—",
+                "距還款": f"{due_emoji} {days_left} 日" if (
+                    days_left is not None) else "—",
+            })
+
+        df_cc = pd.DataFrame(rows_disp)
+        sel_cc = st.dataframe(
+            df_cc, hide_index=True, use_container_width=True,
+            on_select="rerun", selection_mode="single-row",
+            column_config={
+                "限額": st.column_config.NumberColumn(
+                    format="$%.0f"),
+                "已用": st.column_config.NumberColumn(
+                    format="$%.0f"),
+                "使用率": st.column_config.ProgressColumn(
+                    format="%.0f%%", min_value=0, max_value=100),
+            },
+        )
+
+        # === 編輯選定卡 ===
+        if sel_cc.selection.rows:
+            sel_code = df_cc.iloc[sel_cc.selection.rows[0]]["代碼"]
+            card = pfdb.get_credit_card(sel_code)
+            if card:
+                st.divider()
+                with st.expander(
+                    f"✏️ 編輯：{sel_code} "
+                    f"(末 4 碼 {card.get('card_last4') or '—'})",
+                    expanded=True,
+                ):
+                    with st.form(f"edit_cc_{sel_code}"):
+                        cc1, cc2 = st.columns(2)
+                        with cc1:
+                            ed_last4 = st.text_input(
+                                "末 4 碼", card.get("card_last4") or "",
+                                max_chars=4,
+                            )
+                            ed_limit = st.number_input(
+                                "信用額度 (HKD)",
+                                value=float(card.get(
+                                    "credit_limit") or 0),
+                                format="%.0f", min_value=0.0,
+                            )
+                            ed_stmt = st.number_input(
+                                "月結日 (1-31)",
+                                value=int(card.get(
+                                    "statement_day") or 1),
+                                min_value=1, max_value=31, step=1,
+                            )
+                            ed_due = st.number_input(
+                                "還款限期日 (1-31)",
+                                value=int(card.get("due_day") or 1),
+                                min_value=1, max_value=31, step=1,
+                            )
+                        with cc2:
+                            ed_rate = st.number_input(
+                                "年利率（如 32 表示 32%）",
+                                value=float(
+                                    (card.get("interest_rate") or 0)
+                                    * 100),
+                                format="%.2f", min_value=0.0,
+                            )
+                            ed_fee = st.number_input(
+                                "年費 (HKD)",
+                                value=float(card.get(
+                                    "annual_fee") or 0),
+                                format="%.0f", min_value=0.0,
+                            )
+                            ed_rewards = st.text_input(
+                                "回贈 / 里數",
+                                value=card.get("rewards") or "",
+                                placeholder="例：1% 現金回贈 / 飛行里數",
+                            )
+                        ed_notes = st.text_area(
+                            "備註", card.get("notes") or "",
+                            placeholder="年費豁免條件、客服電話等",
+                        )
+
+                        b1, b2 = st.columns(2)
+                        if b1.form_submit_button(
+                                "💾 儲存", type="primary",
+                                use_container_width=True):
+                            try:
+                                pfdb.upsert_credit_card(
+                                    account_code=sel_code,
+                                    card_last4=ed_last4 or None,
+                                    credit_limit=ed_limit or None,
+                                    statement_day=ed_stmt or None,
+                                    due_day=ed_due or None,
+                                    interest_rate=(ed_rate / 100
+                                                    if ed_rate else None),
+                                    annual_fee=ed_fee or None,
+                                    rewards=ed_rewards or None,
+                                    notes=ed_notes or None,
+                                )
+                                st.success(f"✅ 已更新 {sel_code}")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"更新失敗：{ex}")
+                        if b2.form_submit_button(
+                                "🗑️ 移除信用卡資料",
+                                type="secondary",
+                                use_container_width=True):
+                            try:
+                                pfdb.delete_credit_card(sel_code)
+                                st.success(
+                                    f"已移除 {sel_code} 嘅信用卡資料"
+                                    f"（原 account 不變）"
+                                )
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(str(ex))
+    else:
+        st.info(
+            "尚未設定任何信用卡。請於下方「➕ 新增信用卡」加入。"
+        )
+
+    # === 新增信用卡 ===
+    st.divider()
+    with st.expander("➕ 新增信用卡", expanded=not bool(cards)):
+        # 找出可用嘅 liability accounts（未有 credit_card 紀錄嘅）
+        liab_accs = pfdb.list_accounts(account_type="liability")
+        existing_codes = {c["account_code"] for c in cards}
+        available = [a for a in liab_accs
+                     if a["code"] not in existing_codes]
+
+        if not available:
+            st.warning(
+                "⚠️ 所有負債帳戶已有信用卡資料。"
+                "若要加新卡，請先去「🏦 帳戶管理」建立新嘅"
+                "「負債」帳戶（如 CITI_VISA、AMEX_PLATINUM）。"
+            )
+        else:
+            with st.form("new_cc"):
+                acc_opts = {
+                    f"{a.get('icon') or '💳'} {a['name']} "
+                    f"({a['code']})": a["code"]
+                    for a in available
+                }
+                nc_acc_label = st.selectbox(
+                    "選擇對應帳戶（負債類型）",
+                    list(acc_opts.keys()),
+                    help="必須先在「🏦 帳戶管理」建立負債帳戶",
+                )
+
+                n1, n2 = st.columns(2)
+                with n1:
+                    n_last4 = st.text_input(
+                        "末 4 碼", max_chars=4,
+                        placeholder="例：8989",
+                    )
+                    n_limit = st.number_input(
+                        "信用額度 (HKD)",
+                        value=0.0, format="%.0f", min_value=0.0,
+                    )
+                    n_stmt = st.number_input(
+                        "月結日 (1-31)",
+                        value=1, min_value=1, max_value=31, step=1,
+                    )
+                    n_due = st.number_input(
+                        "還款限期日 (1-31)",
+                        value=20, min_value=1, max_value=31, step=1,
+                    )
+                with n2:
+                    n_rate = st.number_input(
+                        "年利率（如 32 表示 32%）",
+                        value=32.0, format="%.2f", min_value=0.0,
+                    )
+                    n_fee = st.number_input(
+                        "年費 (HKD)",
+                        value=0.0, format="%.0f", min_value=0.0,
+                    )
+                    n_rewards = st.text_input(
+                        "回贈 / 里數",
+                        placeholder="例：1% 現金回贈",
+                    )
+                n_notes = st.text_area(
+                    "備註",
+                    placeholder="年費豁免條件、客服電話等",
+                )
+
+                if st.form_submit_button(
+                        "✨ 建立信用卡", type="primary",
+                        use_container_width=True):
+                    try:
+                        pfdb.upsert_credit_card(
+                            account_code=acc_opts[nc_acc_label],
+                            card_last4=n_last4 or None,
+                            credit_limit=n_limit or None,
+                            statement_day=n_stmt or None,
+                            due_day=n_due or None,
+                            interest_rate=(n_rate / 100
+                                            if n_rate else None),
+                            annual_fee=n_fee or None,
+                            rewards=n_rewards or None,
+                            notes=n_notes or None,
+                        )
+                        st.success(
+                            f"✅ 已建立信用卡："
+                            f"{acc_opts[nc_acc_label]}"
                         )
                         st.rerun()
                     except Exception as ex:
