@@ -209,20 +209,29 @@ if filtered:
                 currency = st.text_input("幣別",
                                           inv.get("currency") or "HKD")
 
-                # === 付款方式：dropdown + 自訂選項 ===
+                # === 付款方式：dropdown + 自訂選項（只保留含中文選項）===
                 from personal_finance import db as _pfdb
-                alias_keywords = sorted({
+
+                def _has_chinese(s: str) -> bool:
+                    """檢查字串有冇中文字元（CJK Unified Ideographs）"""
+                    return any('一' <= c <= '鿿' for c in s)
+
+                alias_keywords = {
                     a["keyword"] for a in _pfdb.list_payment_aliases()
-                })
-                past_methods = sorted({
+                }
+                past_methods = {
                     i.get("payment_method") or ""
                     for i in all_invoices
                     if i.get("payment_method")
-                })
+                }
+                all_options = alias_keywords | past_methods
+                # 過濾：只留含中文字的選項；純英文（PayMe / Visa 等）
+                # 不顯示，需要時用「✏️ 自訂輸入...」打字
                 payment_options = sorted(
-                    set(alias_keywords) | set(past_methods)
+                    opt for opt in all_options if _has_chinese(opt)
                 )
-                # 確保目前值在 options 中
+
+                # 確保目前值在 options 中（即使是英文也保留以免遺失）
                 cur_payment = inv.get("payment_method") or ""
                 if cur_payment and cur_payment not in payment_options:
                     payment_options.insert(0, cur_payment)
