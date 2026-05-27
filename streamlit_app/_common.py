@@ -52,8 +52,8 @@ def render_sidebar_nav():
             unsafe_allow_html=True,
         )
         # === 精簡側欄：只 3 個 hub + 儀表板 ===
+        # 注意：所有 page_link 連續排列、無間斷，確保高度一致
         st.page_link("Home.py", label="儀表板", icon="🏠")
-        st.write("")
         st.page_link("pages/1_📤_提取單據.py",
                       label="單據處理", icon="📤")
         st.page_link("pages/3_💰_個人記賬.py",

@@ -132,14 +132,33 @@ def inject_glass_style():
         color: {PALETTE['sidebar_text']} !important;
     }}
     [data-testid="stSidebar"] a {{
-        background: rgba(255,255,255,0.12);
-        border: 1px solid rgba(255,255,255,0.25);
-        border-radius: 10px;
-        padding: 6px 12px !important;
-        margin-bottom: 3px;
-        transition: all 0.25s ease;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
-        font-size: 0.95rem;
+        background: rgba(255,255,255,0.12) !important;
+        border: 1px solid rgba(255,255,255,0.25) !important;
+        border-radius: 10px !important;
+        padding: 8px 14px !important;
+        margin-bottom: 4px !important;
+        transition: all 0.25s ease !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.2) !important;
+        font-size: 0.95rem !important;
+        /* 強制統一高度，避免 active state 改變尺寸 */
+        min-height: 42px !important;
+        display: flex !important;
+        align-items: center !important;
+        line-height: 1.2 !important;
+    }}
+    /* Streamlit 對「目前頁面」嘅 page_link 預設會加 background tint，
+       而家覆寫令其只係加邊框光暈，唔改 height */
+    [data-testid="stSidebar"] a[aria-current="page"],
+    [data-testid="stSidebar"] a.active,
+    [data-testid="stSidebar"] [data-testid="stPageLink"][aria-current="page"] a {{
+        background: linear-gradient(135deg,
+            rgba(255,255,255,0.28),
+            rgba(255,255,255,0.15)) !important;
+        border: 1px solid rgba(255,255,255,0.6) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.4),
+                    0 0 0 2px rgba(255,199,0,0.35) !important;
+        padding: 8px 14px !important;
+        min-height: 42px !important;
     }}
     /* 側欄整體更緊湊（減少 scroll）*/
     [data-testid="stSidebar"] [data-testid="stSidebarUserContent"],
