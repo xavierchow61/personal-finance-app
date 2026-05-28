@@ -307,19 +307,41 @@ with st.expander("➕ 新增貸款", expanded=not bool(loans)):
                 value=1, min_value=1, max_value=31, step=1,
             )
 
-        # 即時試算
+        # 即時試算（用純 HTML 避開 Streamlit 將 $ 當 LaTeX 嘅 bug）
         try:
-            preview_emi = pfdb.calc_monthly_payment(
-                nl_principal, nl_rate / 100, nl_term)
-            preview_total = preview_emi * nl_term
-            preview_interest = preview_total - nl_principal
-            st.info(
-                f"📊 **試算**：每月供款 **${preview_emi:,.2f}** | "
-                f"總還款 ${preview_total:,.0f} | "
-                f"總利息 ${preview_interest:,.0f}"
-                f"（{preview_interest/nl_principal*100:.1f}%）"
-                if nl_principal > 0 else ""
-            )
+            if nl_principal > 0:
+                preview_emi = pfdb.calc_monthly_payment(
+                    nl_principal, nl_rate / 100, nl_term)
+                preview_total = preview_emi * nl_term
+                preview_interest = preview_total - nl_principal
+                pct = preview_interest / nl_principal * 100
+                st.markdown(
+                    f"""
+                    <div style="background:rgba(0,166,224,0.12);
+                                border-left:4px solid #00A6E0;
+                                border-radius:10px;
+                                padding:0.8rem 1.1rem;
+                                color:#1A1A2E;
+                                font-size:0.95rem;
+                                line-height:1.6;
+                                margin:0.6rem 0;">
+                        📊 <b>試算</b><br>
+                        每月供款：
+                        <b style="color:#0078BA;font-size:1.1rem;">
+                            HK${preview_emi:,.2f}
+                        </b><br>
+                        總還款：<b>HK${preview_total:,.0f}</b>
+                        &nbsp;·&nbsp;
+                        總利息：<b style="color:#E60012;">
+                            HK${preview_interest:,.0f}
+                        </b>
+                        <span style="color:#6B7BA0;">
+                            ({pct:.1f}%)
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
         except Exception:
             pass
 
