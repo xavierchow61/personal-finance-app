@@ -47,6 +47,125 @@ kpi_card(c4, f"{period_label} 支出",
          pl["total_expense"], C["warning"], "🛒", "本期累計")
 
 st.write("")
+
+# === 💳 信用卡儀表板 ===
+try:
+    from personal_finance import db as pfdb
+    from datetime import date as _d, timedelta as _td
+
+    def _next_due_date(due_day, today=None):
+        """計算今日之後最近嘅還款日"""
+        if not due_day:
+            return None
+        today = today or _d.today()
+        import calendar
+        try:
+            target = today.replace(day=due_day)
+        except ValueError:
+            last = calendar.monthrange(today.year, today.month)[1]
+            target = today.replace(day=min(due_day, last))
+        if target <= today:
+            m, y = today.month + 1, today.year
+            if m > 12:
+                m, y = 1, y + 1
+            try:
+                target = today.replace(year=y, month=m, day=due_day)
+            except ValueError:
+                last = calendar.monthrange(y, m)[1]
+                target = today.replace(
+                    year=y, month=m, day=min(due_day, last))
+        return target
+
+    cards = pfdb.list_credit_cards()
+    cards_with_limit = [c for c in cards
+                         if (c.get("credit_limit") or 0) > 0]
+
+    if cards_with_limit:
+        st.markdown(
+            f"<h3 style='color:{C['text']};margin-top:1rem;'>"
+            f"💳 信用卡概覽</h3>",
+            unsafe_allow_html=True,
+        )
+
+        total_limit = 0.0
+        total_used = 0.0
+        card_details = []
+        today_d = _d.today()
+        for cc in cards_with_limit:
+            code = cc["account_code"]
+            balance = abs(pfr.account_balance(code, in_hkd=True))
+            limit = float(cc["credit_limit"])
+            total_limit += limit
+            total_used += balance
+            util = (balance / limit * 100) if limit > 0 else 0
+            next_due = _next_due_date(cc.get("due_day"), today_d)
+            days_left = ((next_due - today_d).days
+                         if next_due else None)
+            card_details.append({
+                "name": cc.get("account_name") or code,
+                "icon": cc.get("account_icon") or "💳",
+                "last4": cc.get("card_last4") or "—",
+                "balance": balance,
+                "limit": limit,
+                "util": util,
+                "days_left": days_left,
+            })
+
+        total_available = total_limit - total_used
+        avg_util = (total_used / total_limit * 100
+                    if total_limit > 0 else 0)
+        # 配色：使用率越高越紅
+        util_color = (C["red"] if avg_util > 80
+                       else C["warning"] if avg_util > 50
+                       else C["success"])
+
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        kpi_card(cc1, "總信用額度", total_limit, C["info"],
+                  "💳", f"{len(cards_with_limit)} 張卡")
+        kpi_card(cc2, "已用金額", total_used, C["warning"],
+                  "📊", "HKD")
+        kpi_card(cc3, "可用額度", total_available,
+                  C["success"], "✨", "HKD")
+        kpi_card(cc4, "平均使用率", f"{avg_util:.0f}%",
+                  util_color, "📈",
+                  ("🔴 高" if avg_util > 80
+                   else "🟡 中" if avg_util > 50
+                   else "🟢 健康"))
+
+        # === 警示橫幅 ===
+        # 1. 即將還款（≤ 7 日）
+        due_soon = [c for c in card_details
+                    if c["days_left"] is not None
+                    and c["days_left"] <= 7]
+        if due_soon:
+            lines = [
+                f"• {c['icon']} {c['name']}（****{c['last4']}）"
+                f" — 還剩 **{c['days_left']} 日**，"
+                f"應還 **${c['balance']:,.0f}**"
+                for c in due_soon
+            ]
+            st.warning(
+                "⏰ **即將還款提示**\n\n" + "\n\n".join(lines)
+            )
+
+        # 2. 高使用率（> 80%）
+        high_util = [c for c in card_details if c["util"] > 80]
+        if high_util:
+            lines = [
+                f"• {c['icon']} {c['name']}（****{c['last4']}）"
+                f" — 用咗 **{c['util']:.0f}%**"
+                f"（${c['balance']:,.0f} / ${c['limit']:,.0f}）"
+                for c in high_util
+            ]
+            st.error(
+                "🔴 **高使用率警示**\n\n" + "\n\n".join(lines)
+            )
+
+        st.write("")
+except Exception:
+    # 信用卡資料庫未 migrate 或無資料 → 靜默跳過
+    pass
+
 st.write("")
 
 # === 兩欄佈局：圓餅圖 / 五大單據 ===
