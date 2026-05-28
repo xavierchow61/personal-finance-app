@@ -1,6 +1,6 @@
 """Personal Finance database schemas + CRUD。
 
-存喺 `personal_finance.db`（同 invoices.db 分開，避免污染現有資料）。
+支援 SQLite (本地) + PostgreSQL (Supabase 雲端)。
 """
 import sqlite3
 from contextlib import contextmanager
@@ -8,6 +8,9 @@ from datetime import date, datetime
 from pathlib import Path
 
 from config import BASE_DIR, get_personal_finance_db_path
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from db_backend import get_conn, IS_POSTGRES
 
 
 # 預設路徑（向後兼容）；實際讀寫時用 get_personal_finance_db_path()
@@ -39,6 +42,20 @@ CREATE TABLE IF NOT EXISTS accounts (
     color TEXT,                                -- hex color for UI
     icon TEXT,                                 -- emoji or icon name
     notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============ PROJECTS ============
+-- 必須喺 journal_entries 之前定義（因 FK 依賴）
+CREATE TABLE IF NOT EXISTS projects (
+    project_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,                         -- 「日本旅行」「裝修廚房」
+    description TEXT,
+    start_date TEXT,
+    end_date TEXT,
+    total_budget REAL,
+    status TEXT DEFAULT 'active',
+    icon TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -121,19 +138,6 @@ CREATE TABLE IF NOT EXISTS fx_rates (
     UNIQUE(currency, as_of_date)
 );
 
--- ============ PROJECTS ============
-CREATE TABLE IF NOT EXISTS projects (
-    project_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,                         -- 「日本旅行」「裝修廚房」
-    description TEXT,
-    start_date TEXT,
-    end_date TEXT,
-    total_budget REAL,
-    status TEXT DEFAULT 'active',
-    icon TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
 -- ============ CREDIT CARDS ============
 -- 信用卡額外資料（額度、結算日、還款日、利率…）
 -- account_code 必須對應一個 type='liability' 嘅 account
@@ -182,28 +186,51 @@ CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 
 @contextmanager
 def _conn():
-    # 動態取目前用戶嘅 DB；無登入則跌回 BASE_DIR/personal_finance.db
+    """跨 backend connection（PG = Supabase；SQLite = 本地按用戶切換）"""
     db_path = get_personal_finance_db_path()
-    con = sqlite3.connect(str(db_path))
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA foreign_keys = ON")
-    try:
+    with get_conn(db_path) as con:
+        # PG 自動啟用 FK；SQLite 需要 PRAGMA
+        if not IS_POSTGRES:
+            con.execute("PRAGMA foreign_keys = ON")
         yield con
-        con.commit()
-    finally:
-        con.close()
 
 
-def init_db():
+def _column_exists(con, table: str, column: str) -> bool:
+    """跨 backend 檢查 column 存在"""
+    if IS_POSTGRES:
+        rows = con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name=? AND column_name=?",
+            (table, column),
+        ).fetchall()
+        return len(rows) > 0
+    else:
+        cols = {r["name"] for r in con.execute(
+            f"PRAGMA table_info({table})").fetchall()}
+        return column in cols
+
+
+_INIT_DONE = False
+
+
+def init_db(force: bool = False):
+    """初始化 schema。已執行過則跳過（除非 force=True）。
+
+    對 PG 嚟講，呢個 cache 重要：避免每次 CRUD 都跑 schema 檢查。
+    """
+    global _INIT_DONE
+    if _INIT_DONE and not force:
+        return
+    _INIT_DONE = True   # 提前 set 避免 recursive call
     with _conn() as c:
         c.executescript(SCHEMA)
         # Migration：journal_entries 加 currency / fx_rate / hkd_amount
-        cols = {r["name"] for r in c.execute(
-            "PRAGMA table_info(journal_entries)").fetchall()}
-        if "currency" not in cols:
-            c.execute("ALTER TABLE journal_entries ADD COLUMN currency TEXT DEFAULT 'HKD'")
-        if "fx_rate" not in cols:
-            c.execute("ALTER TABLE journal_entries ADD COLUMN fx_rate REAL DEFAULT 1.0")
+        if not _column_exists(c, "journal_entries", "currency"):
+            c.execute("ALTER TABLE journal_entries ADD COLUMN "
+                      "currency TEXT DEFAULT 'HKD'")
+        if not _column_exists(c, "journal_entries", "fx_rate"):
+            c.execute("ALTER TABLE journal_entries ADD COLUMN "
+                      "fx_rate REAL DEFAULT 1.0")
         # Migration：credit_cards 表（保證舊 DB 都有）
         c.execute("""
             CREATE TABLE IF NOT EXISTS credit_cards (
@@ -227,14 +254,12 @@ def init_db():
             ON credit_cards(account_code)
         """)
         # Migration：credit_cards 加 rewards_rate / rewards_type
-        cc_cols = {r["name"] for r in c.execute(
-            "PRAGMA table_info(credit_cards)").fetchall()}
-        if "rewards_rate" not in cc_cols:
+        if not _column_exists(c, "credit_cards", "rewards_rate"):
             c.execute(
                 "ALTER TABLE credit_cards ADD COLUMN "
                 "rewards_rate REAL"
             )
-        if "rewards_type" not in cc_cols:
+        if not _column_exists(c, "credit_cards", "rewards_type"):
             c.execute(
                 "ALTER TABLE credit_cards ADD COLUMN "
                 "rewards_type TEXT"

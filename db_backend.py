@@ -4,13 +4,15 @@
 - 環境變數 / Streamlit secret `DATABASE_URL` 有設 → 用 PostgreSQL
 - 否則用 SQLite（向後兼容）
 
-提供：
-- IS_POSTGRES：boolean flag
-- get_conn(sqlite_path)：context manager 回傳 connection
-- placeholder()：回傳 "?" 或 "%s"
-- adapt_sql(sql)：將 SQLite SQL 改成 PostgreSQL 兼容
-- exec_returning(cur, sql, params, returning_col)：execute + 取 last insert id
-- executescript_compat(con, script)：跨後端執行 multi-statement script
+關鍵設計：用 PgConnAdapter wrap psycopg connection，
+令所有現存使用 sqlite3 API 嘅 code（con.execute / cur.fetchall /
+cur.lastrowid）都唔需要改。
+
+SQL 自動翻譯：
+- ?            → %s
+- INTEGER PRIMARY KEY AUTOINCREMENT → SERIAL PRIMARY KEY
+- INSERT 自動加 RETURNING * 以模擬 lastrowid
+- TEXT DEFAULT CURRENT_TIMESTAMP → TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 """
 from __future__ import annotations
 
@@ -23,12 +25,9 @@ from pathlib import Path
 
 def _resolve_database_url() -> str:
     """優先順序：環境變數 > .env > Streamlit secrets"""
-    # 1. 環境變數
     url = os.getenv("DATABASE_URL", "")
     if url:
         return url
-    # 2. .env（透過 python-dotenv 已被 config.py 載入）
-    # 3. Streamlit secrets
     try:
         import streamlit as st
         url = st.secrets.get("DATABASE_URL", "")
@@ -41,43 +40,188 @@ DATABASE_URL = _resolve_database_url()
 IS_POSTGRES = bool(DATABASE_URL)
 
 
-def placeholder() -> str:
-    """SQL 參數佔位符。SQLite 用 ?，PostgreSQL 用 %s"""
-    return "%s" if IS_POSTGRES else "?"
-
+# ============================================================
+# SQL ADAPTER（SQLite → PostgreSQL 翻譯）
+# ============================================================
 
 def adapt_sql(sql: str) -> str:
-    """將寫成 SQLite 風格的 SQL 自動轉換到 PostgreSQL 兼容。
-
-    處理項目：
-    - ?  →  %s（參數佔位符）
-    - INTEGER PRIMARY KEY AUTOINCREMENT  →  SERIAL PRIMARY KEY
-    - TEXT DEFAULT CURRENT_TIMESTAMP  →  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    - INTEGER DEFAULT 0/1（用於 boolean）：保留（PG 也接受 0/1 INT）
-    - INSERT OR REPLACE → INSERT ... ON CONFLICT ... DO UPDATE
-      （太複雜，由 caller 用 ON CONFLICT 直接寫）
-    """
+    """將 SQLite SQL 翻譯成 PG 兼容"""
     if not IS_POSTGRES:
         return sql
-
     out = sql
-    # 佔位符
+    # 1. 參數佔位符
     out = out.replace("?", "%s")
-    # AUTOINCREMENT
+    # 2. AUTOINCREMENT → SERIAL
     out = re.sub(
         r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT",
         "SERIAL PRIMARY KEY",
         out, flags=re.IGNORECASE,
     )
-    # TEXT DEFAULT CURRENT_TIMESTAMP → TIMESTAMP（保留 default）
+    # 3. TEXT DEFAULT CURRENT_TIMESTAMP → TIMESTAMP
     out = re.sub(
         r"TEXT\s+DEFAULT\s+CURRENT_TIMESTAMP",
         "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         out, flags=re.IGNORECASE,
     )
-    # SQLite-only：PRAGMA — caller 須單獨處理
+    # 4. INSERT OR REPLACE → INSERT ON CONFLICT
+    # （注意：UNIQUE col 必須喺 schema 有定義；無 → 仍然會 fail）
+    # 因 SQLite 用法多樣，我哋只做最簡單 INSERT OR IGNORE 轉換
+    out = re.sub(
+        r"INSERT\s+OR\s+IGNORE\s+INTO",
+        "INSERT INTO",  # caller 須加 ON CONFLICT DO NOTHING
+        out, flags=re.IGNORECASE,
+    )
     return out
 
+
+# ============================================================
+# CONNECTION WRAPPERS
+# ============================================================
+
+class PgCursorAdapter:
+    """模擬 sqlite3 cursor API，特別處理 lastrowid"""
+
+    def __init__(self, pg_cursor, captured_first_row=None):
+        self._cur = pg_cursor
+        # 若 INSERT ... RETURNING * 已執行，第一條 row 預先 fetch 咗
+        self._captured = captured_first_row
+        self._captured_id = None
+        if captured_first_row:
+            # 取第一個欄位值當 last insert id
+            keys = list(captured_first_row.keys())
+            if keys:
+                self._captured_id = captured_first_row[keys[0]]
+
+    @property
+    def lastrowid(self):
+        """模擬 sqlite3 cursor.lastrowid"""
+        return self._captured_id
+
+    def fetchall(self):
+        results = []
+        if self._captured is not None:
+            results.append(self._captured)
+            self._captured = None
+        try:
+            more = self._cur.fetchall()
+            results.extend(more)
+        except Exception:
+            pass
+        return results
+
+    def fetchone(self):
+        if self._captured is not None:
+            r = self._captured
+            self._captured = None
+            return r
+        try:
+            return self._cur.fetchone()
+        except Exception:
+            return None
+
+    def __iter__(self):
+        if self._captured is not None:
+            yield self._captured
+            self._captured = None
+        try:
+            for row in self._cur:
+                yield row
+        except Exception:
+            pass
+
+
+class PgConnAdapter:
+    """模擬 sqlite3.Connection API 包住 psycopg connection"""
+
+    def __init__(self, pg_conn):
+        self._con = pg_conn
+
+    def execute(self, sql, params=()):
+        """模擬 sqlite3 con.execute() — INSERT 自動 RETURNING *"""
+        sql_adapted = adapt_sql(sql)
+        cur = self._con.cursor()
+
+        # 偵測 INSERT 且未有 RETURNING → 自動加 RETURNING *
+        stripped = sql_adapted.lstrip()
+        is_insert = stripped.upper().startswith("INSERT")
+        has_returning = "RETURNING" in sql_adapted.upper()
+        captured = None
+
+        if is_insert and not has_returning:
+            # 加 RETURNING *
+            sql_to_run = sql_adapted.rstrip().rstrip(";") + " RETURNING *"
+            try:
+                cur.execute(sql_to_run, tuple(params) if params else None)
+                # 捕捉第一條 row 攞 id
+                try:
+                    captured = cur.fetchone()
+                except Exception:
+                    captured = None
+            except Exception as ex:
+                # 某啲 INSERT 唔可以 RETURNING（如 ON CONFLICT 無新 row）
+                # → fallback 跑原 SQL，無 returning
+                if "ON CONFLICT" in sql_adapted.upper():
+                    # 重新跑唔加 RETURNING
+                    self._con.rollback()
+                    cur = self._con.cursor()
+                    try:
+                        cur.execute(
+                            sql_adapted,
+                            tuple(params) if params else None
+                        )
+                    except Exception:
+                        raise ex
+                else:
+                    raise
+        else:
+            cur.execute(sql_adapted, tuple(params) if params else None)
+
+        return PgCursorAdapter(cur, captured)
+
+    def executescript(self, script):
+        """模擬 sqlite3 executescript（PG 唔支援多 statement）
+
+        每條 statement 用獨立 transaction（commit/rollback per statement），
+        確保「already exists」之類嘅錯誤唔會清走之前成功嘅 DDL。
+        """
+        script_adapted = adapt_sql(script)
+        # 簡易 split by ;（我哋 schema 簡單，無 trigger / DO block）
+        statements = []
+        for raw in script_adapted.split(";"):
+            cleaned = "\n".join(
+                line for line in raw.split("\n")
+                if line.strip() and not line.strip().startswith("--")
+            ).strip()
+            if cleaned:
+                statements.append(cleaned)
+
+        for stmt in statements:
+            cur = self._con.cursor()
+            try:
+                cur.execute(stmt)
+                self._con.commit()  # 即時 commit 避免被後續錯誤拖累
+            except Exception as ex:
+                self._con.rollback()
+                msg = str(ex).lower()
+                # 預期嘅幂等錯誤 → 靜默跳過
+                if ("already exists" in msg
+                        or "does not exist" in msg):
+                    continue
+                raise
+
+    def commit(self):
+        self._con.commit()
+
+    def rollback(self):
+        self._con.rollback()
+
+    def close(self):
+        self._con.close()
+
+
+# ============================================================
+# CONNECTION CONTEXT MANAGER
+# ============================================================
 
 @contextmanager
 def get_conn(sqlite_path: str | Path):
@@ -85,22 +229,28 @@ def get_conn(sqlite_path: str | Path):
 
     用法：
         with get_conn(SQLITE_PATH) as con:
-            cur = con.execute("SELECT ...")  # SQLite
-            # 或
-            with con.cursor() as cur: cur.execute("SELECT ...")  # PG
-
-    回傳嘅 connection 可以直接 con.execute() 或 con.cursor().execute()，
-    視乎呼叫端。為簡化，建議全部用 con.cursor() 介面。
+            con.execute(...)
+            cur = con.execute(...)
+            cur.lastrowid  # works for both
     """
     if IS_POSTGRES:
         import psycopg
         from psycopg.rows import dict_row
-        con = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        con = psycopg.connect(
+            DATABASE_URL,
+            row_factory=dict_row,
+            autocommit=False,
+            connect_timeout=20,
+        )
+        adapter = PgConnAdapter(con)
         try:
-            yield con
-            con.commit()
+            yield adapter
+            adapter.commit()
+        except Exception:
+            adapter.rollback()
+            raise
         finally:
-            con.close()
+            adapter.close()
     else:
         con = sqlite3.connect(str(sqlite_path))
         con.row_factory = sqlite3.Row
@@ -111,106 +261,8 @@ def get_conn(sqlite_path: str | Path):
             con.close()
 
 
-def execute(con, sql: str, params: tuple | list | None = None):
-    """跨 backend 嘅 execute helper。回傳 cursor。
-
-    SQLite：con.execute(sql, params)
-    PG：with con.cursor() → cur.execute(sql, params)，但為兼容直接用 con.cursor()
-    """
-    sql = adapt_sql(sql)
-    if IS_POSTGRES:
-        cur = con.cursor()
-        cur.execute(sql, params or ())
-        return cur
-    else:
-        return con.execute(sql, params or ())
-
-
-def fetchall(con, sql: str, params: tuple | list | None = None) -> list[dict]:
-    """執行 SELECT 並回傳 list[dict]。"""
-    cur = execute(con, sql, params)
-    rows = cur.fetchall()
-    # PG 用 dict_row 已回傳 dict；SQLite 用 Row（dict-like）
-    if IS_POSTGRES:
-        return rows  # list[dict]
-    return [dict(r) for r in rows]
-
-
-def fetchone(con, sql: str, params: tuple | list | None = None) -> dict | None:
-    cur = execute(con, sql, params)
-    row = cur.fetchone()
-    if row is None:
-        return None
-    if IS_POSTGRES:
-        return row
-    return dict(row)
-
-
-def insert_returning_id(con, sql: str, params: tuple | list,
-                         returning_col: str = "id") -> int:
-    """執行 INSERT 並回傳新建嘅 id。
-
-    SQLite：用 cursor.lastrowid
-    PG：用 RETURNING {returning_col}
-    """
-    sql = adapt_sql(sql)
-    if IS_POSTGRES:
-        # 在 SQL 後加 RETURNING（如果未有）
-        if "returning" not in sql.lower():
-            sql = sql.rstrip().rstrip(";") + f" RETURNING {returning_col}"
-        cur = con.cursor()
-        cur.execute(sql, params)
-        row = cur.fetchone()
-        return row[returning_col] if isinstance(row, dict) else row[0]
-    else:
-        cur = con.execute(sql, params)
-        return cur.lastrowid
-
-
-def executescript_compat(con, script: str):
-    """執行 multi-statement script，跨後端兼容。
-
-    SQLite：用 con.executescript()
-    PG：split by ';' 再逐個 execute（避開 trigger / DO block 等複雜情況）
-    """
-    if IS_POSTGRES:
-        # 簡化分割：找 ; 然後 newline 或結尾。實際 SCHEMA 內容簡單足夠。
-        script = adapt_sql(script)
-        cur = con.cursor()
-        statements = [s.strip() for s in script.split(";") if s.strip()
-                       and not s.strip().startswith("--")]
-        for stmt in statements:
-            # 過濾純註解行
-            non_comment = "\n".join(
-                line for line in stmt.split("\n")
-                if line.strip() and not line.strip().startswith("--")
-            )
-            if non_comment.strip():
-                cur.execute(non_comment)
-    else:
-        con.executescript(script)
-
-
-def column_exists(con, table: str, column: str) -> bool:
-    """檢查 table 有冇某條 column。SQLite 用 PRAGMA，PG 用 information_schema"""
-    if IS_POSTGRES:
-        cur = con.cursor()
-        cur.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = %s AND column_name = %s",
-            (table, column),
-        )
-        return cur.fetchone() is not None
-    else:
-        cols = {r["name"] for r in con.execute(
-            f"PRAGMA table_info({table})").fetchall()}
-        return column in cols
-
-
 def banner() -> str:
-    """回傳目前用緊邊個 backend 嘅 banner string，方便 debug"""
     if IS_POSTGRES:
-        # 遮罩 password
         masked = re.sub(r":[^:@]+@", ":****@", DATABASE_URL)
         return f"🐘 PostgreSQL (Supabase) — {masked}"
     return "🪶 SQLite (本地)"

@@ -1,4 +1,4 @@
-"""SQLite 儲存所有提取出嘅單據"""
+"""DB 儲存所有提取出嘅單據（支援 SQLite / PostgreSQL）"""
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config import DB_PATH, get_invoices_db_path
+from db_backend import get_conn, IS_POSTGRES
 
 
 # === 報銷類型 ===
@@ -43,27 +44,51 @@ INDEXES = [
 
 @contextmanager
 def _conn():
-    # 動態取目前用戶嘅 DB（多用戶模式）；無登入時跌回 BASE_DIR/invoices.db
+    """跨 backend connection。
+    - PG (Supabase) → 所有用戶共用一個 schema
+    - SQLite (本地) → 按登入用戶動態切換 DB 檔
+    """
     db_path = get_invoices_db_path()
-    con = sqlite3.connect(str(db_path))
-    con.row_factory = sqlite3.Row
-    try:
+    with get_conn(db_path) as con:
         yield con
-        con.commit()
-    finally:
-        con.close()
 
 
-def init_db():
+def _column_exists(con, table: str, column: str) -> bool:
+    """跨 backend 檢查 column 存在"""
+    if IS_POSTGRES:
+        rows = con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name=? AND column_name=?",
+            (table, column),
+        ).fetchall()
+        return len(rows) > 0
+    else:
+        cols = {r["name"] for r in con.execute(
+            f"PRAGMA table_info({table})").fetchall()}
+        return column in cols
+
+
+_INIT_DONE = False
+
+
+def init_db(force: bool = False):
+    """初始化 schema。已執行過則跳過（PG 嚟講避免重複 round trip）"""
+    global _INIT_DONE
+    if _INIT_DONE and not force:
+        return
+    _INIT_DONE = True   # 提前 set 避免 recursive call
     with _conn() as con:
         # 1. 確保 table 存在（舊版可能冇新 column）
         con.execute(CREATE_TABLE)
-        # 2. Migration: 補返新 column 入舊 DB（必須喺 index 之前）
-        cols = {r["name"] for r in con.execute("PRAGMA table_info(invoices)").fetchall()}
-        if "expense_type" not in cols:
-            con.execute("ALTER TABLE invoices ADD COLUMN expense_type TEXT DEFAULT '私人'")
-        if "reimbursed" not in cols:
-            con.execute("ALTER TABLE invoices ADD COLUMN reimbursed INTEGER DEFAULT 0")
+        # 2. Migration: 補返新 column 入舊 DB
+        if not _column_exists(con, "invoices", "expense_type"):
+            con.execute(
+                "ALTER TABLE invoices ADD COLUMN "
+                "expense_type TEXT DEFAULT '私人'")
+        if not _column_exists(con, "invoices", "reimbursed"):
+            con.execute(
+                "ALTER TABLE invoices ADD COLUMN "
+                "reimbursed INTEGER DEFAULT 0")
         # 3. 而家先建 index
         for sql in INDEXES:
             con.execute(sql)
