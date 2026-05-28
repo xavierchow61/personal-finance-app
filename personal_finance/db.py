@@ -147,6 +147,8 @@ CREATE TABLE IF NOT EXISTS credit_cards (
     interest_rate REAL,                         -- 年利率（例 0.32）
     annual_fee REAL,                            -- 年費
     rewards TEXT,                               -- 回贈/里數說明
+    rewards_rate REAL,                          -- 預設回贈率（0.01 = 1%）
+    rewards_type TEXT,                          -- "cash" / "miles" / "points"
     notes TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (account_code) REFERENCES accounts(code)
@@ -154,6 +156,27 @@ CREATE TABLE IF NOT EXISTS credit_cards (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cc_account ON credit_cards(account_code);
+
+-- ============ LOANS ============
+-- 個人貸款：按揭/汽車/個人/信用卡分期
+CREATE TABLE IF NOT EXISTS loans (
+    loan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,                         -- 「東亞按揭」「中銀汽車貸款」
+    loan_type TEXT NOT NULL,                    -- mortgage/auto/personal/instalment
+    bank TEXT,                                  -- 銀行/機構名
+    principal REAL NOT NULL,                    -- 本金總額
+    interest_rate REAL NOT NULL,                -- 年利率（例 0.045 = 4.5%）
+    term_months INTEGER NOT NULL,               -- 還款期數（月）
+    monthly_payment REAL,                       -- 每月應還（可由系統計算）
+    start_date TEXT NOT NULL,                   -- 開始日
+    due_day INTEGER,                            -- 每月還款日 1-31
+    account_code TEXT,                          -- 對應 liability account（如有）
+    status TEXT DEFAULT 'active',               -- active / paid / cancelled
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 """
 
 
@@ -202,6 +225,42 @@ def init_db():
         c.execute("""
             CREATE INDEX IF NOT EXISTS idx_cc_account
             ON credit_cards(account_code)
+        """)
+        # Migration：credit_cards 加 rewards_rate / rewards_type
+        cc_cols = {r["name"] for r in c.execute(
+            "PRAGMA table_info(credit_cards)").fetchall()}
+        if "rewards_rate" not in cc_cols:
+            c.execute(
+                "ALTER TABLE credit_cards ADD COLUMN "
+                "rewards_rate REAL"
+            )
+        if "rewards_type" not in cc_cols:
+            c.execute(
+                "ALTER TABLE credit_cards ADD COLUMN "
+                "rewards_type TEXT"
+            )
+        # Migration：loans 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS loans (
+                loan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                loan_type TEXT NOT NULL,
+                bank TEXT,
+                principal REAL NOT NULL,
+                interest_rate REAL NOT NULL,
+                term_months INTEGER NOT NULL,
+                monthly_payment REAL,
+                start_date TEXT NOT NULL,
+                due_day INTEGER,
+                account_code TEXT,
+                status TEXT DEFAULT 'active',
+                notes TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_loans_status
+            ON loans(status)
         """)
 
 
@@ -721,6 +780,8 @@ def upsert_credit_card(account_code: str,
                         interest_rate: float | None = None,
                         annual_fee: float | None = None,
                         rewards: str | None = None,
+                        rewards_rate: float | None = None,
+                        rewards_type: str | None = None,
                         notes: str | None = None):
     """新增 / 更新信用卡資料"""
     init_db()
@@ -728,8 +789,9 @@ def upsert_credit_card(account_code: str,
         c.execute("""
             INSERT INTO credit_cards
               (account_code, card_last4, credit_limit, statement_day,
-               due_day, interest_rate, annual_fee, rewards, notes)
-            VALUES (?,?,?,?,?,?,?,?,?)
+               due_day, interest_rate, annual_fee, rewards,
+               rewards_rate, rewards_type, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(account_code) DO UPDATE SET
               card_last4=excluded.card_last4,
               credit_limit=excluded.credit_limit,
@@ -738,9 +800,12 @@ def upsert_credit_card(account_code: str,
               interest_rate=excluded.interest_rate,
               annual_fee=excluded.annual_fee,
               rewards=excluded.rewards,
+              rewards_rate=excluded.rewards_rate,
+              rewards_type=excluded.rewards_type,
               notes=excluded.notes
         """, (account_code, card_last4, credit_limit, statement_day,
-              due_day, interest_rate, annual_fee, rewards, notes))
+              due_day, interest_rate, annual_fee, rewards,
+              rewards_rate, rewards_type, notes))
 
 
 def delete_credit_card(account_code: str):
@@ -749,3 +814,100 @@ def delete_credit_card(account_code: str):
     with _conn() as c:
         c.execute("DELETE FROM credit_cards WHERE account_code=?",
                    (account_code,))
+
+
+# ============================================================
+# LOANS
+# ============================================================
+def list_loans(status: str | None = None) -> list[dict]:
+    """列出所有貸款（可按 status 篩）"""
+    init_db()
+    sql = "SELECT * FROM loans"
+    params = []
+    if status:
+        sql += " WHERE status=?"
+        params.append(status)
+    sql += " ORDER BY status, start_date DESC"
+    with _conn() as c:
+        try:
+            rows = c.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.OperationalError:
+            return []
+
+
+def get_loan(loan_id: int) -> dict | None:
+    init_db()
+    with _conn() as c:
+        row = c.execute("SELECT * FROM loans WHERE loan_id=?",
+                         (loan_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def create_loan(name: str, loan_type: str,
+                 principal: float, interest_rate: float,
+                 term_months: int, start_date: str,
+                 bank: str | None = None,
+                 monthly_payment: float | None = None,
+                 due_day: int | None = None,
+                 account_code: str | None = None,
+                 notes: str | None = None) -> int:
+    init_db()
+    # 自動計 monthly_payment（如未提供）
+    if monthly_payment is None and term_months > 0:
+        monthly_payment = calc_monthly_payment(
+            principal, interest_rate, term_months)
+    with _conn() as c:
+        cur = c.execute("""
+            INSERT INTO loans
+              (name, loan_type, bank, principal, interest_rate,
+               term_months, monthly_payment, start_date, due_day,
+               account_code, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (name, loan_type, bank, principal, interest_rate,
+              term_months, monthly_payment, start_date, due_day,
+              account_code, notes))
+        return cur.lastrowid
+
+
+def update_loan(loan_id: int, **fields):
+    init_db()
+    if not fields:
+        return
+    allowed = {"name", "loan_type", "bank", "principal",
+                "interest_rate", "term_months", "monthly_payment",
+                "start_date", "due_day", "account_code", "status",
+                "notes"}
+    sets, params = [], []
+    for k, v in fields.items():
+        if k in allowed:
+            sets.append(f"{k}=?")
+            params.append(v)
+    if not sets:
+        return
+    params.append(loan_id)
+    with _conn() as c:
+        c.execute(
+            f"UPDATE loans SET {', '.join(sets)} WHERE loan_id=?",
+            params)
+
+
+def delete_loan(loan_id: int):
+    init_db()
+    with _conn() as c:
+        c.execute("DELETE FROM loans WHERE loan_id=?", (loan_id,))
+
+
+def calc_monthly_payment(principal: float, annual_rate: float,
+                          term_months: int) -> float:
+    """等額本息每月供款 (EMI):
+    M = P × r × (1+r)^n / ((1+r)^n − 1)
+    r = monthly rate, n = term in months
+    """
+    if term_months <= 0:
+        return 0.0
+    if annual_rate <= 0:
+        return principal / term_months
+    r = annual_rate / 12.0
+    n = term_months
+    return principal * r * ((1 + r) ** n) / (((1 + r) ** n) - 1)

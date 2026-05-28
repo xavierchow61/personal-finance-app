@@ -522,6 +522,82 @@ with tab_cc:
         )
         cards = []
 
+    # === 💰 回贈統計 ===
+    cards_with_rate = [c for c in cards
+                        if c.get("rewards_rate")]
+    if cards_with_rate:
+        from datetime import date as _d2
+        import database as _invdb2
+        today_d2 = _d2.today()
+        ytd_start = today_d2.replace(month=1, day=1).isoformat()
+        mtd_start = today_d2.replace(day=1).isoformat()
+
+        ytd_total = 0.0
+        mtd_total = 0.0
+        best_card = None
+        best_card_ytd = 0.0
+        all_inv = _invdb2.list_all()
+
+        for c_meta in cards_with_rate:
+            rate = c_meta.get("rewards_rate") or 0
+            related_inv = []
+            for inv in all_inv:
+                pm = inv.get("payment_method") or ""
+                # 用 last4 或 alias 對應
+                if (c_meta.get("card_last4")
+                        and c_meta["card_last4"] in pm):
+                    related_inv.append(inv)
+                elif pfdb.lookup_payment_alias(pm) == \
+                        c_meta["account_code"]:
+                    related_inv.append(inv)
+
+            card_ytd = 0.0
+            card_mtd = 0.0
+            for inv in related_inv:
+                d = inv.get("purchase_date") or ""
+                amt = float(inv.get("total_amount") or 0)
+                if d >= ytd_start:
+                    card_ytd += amt * rate
+                if d >= mtd_start:
+                    card_mtd += amt * rate
+            ytd_total += card_ytd
+            mtd_total += card_mtd
+            if card_ytd > best_card_ytd:
+                best_card_ytd = card_ytd
+                best_card = c_meta
+
+        best_name = ((best_card.get("account_name") or "—")
+                      if best_card else "—")
+        st.markdown(
+            f"""
+            <div style="background:linear-gradient(135deg,
+                rgba(255,199,0,0.18) 0%,
+                rgba(0,166,224,0.10) 100%);
+                border:2px solid rgba(255,199,0,0.5);
+                border-radius:14px;padding:1rem 1.4rem;
+                margin-bottom:1rem;">
+                <div style="color:#0078BA;font-weight:700;
+                            font-size:1.05rem;
+                            margin-bottom:0.5rem;">
+                    💰 回贈統計
+                </div>
+                <div style="display:flex;gap:1.5rem;
+                            flex-wrap:wrap;color:#1A1A2E;">
+                    <div>本月累計：<b>${mtd_total:,.2f}</b></div>
+                    <div>本年累計：<b>${ytd_total:,.2f}</b></div>
+                    <div>👑 賺最多：<b>{best_name}</b>
+                        (${best_card_ytd:,.2f})</div>
+                </div>
+                <div style="color:#6B7BA0;font-size:0.78rem;
+                            margin-top:0.4rem;">
+                    💡 設定每張卡嘅回贈率（編輯信用卡），
+                    系統會自動按已記錄嘅單據計算回贈
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     if cards:
         # 計算每張卡嘅 utilization + 距離還款日
         rows_disp = []
@@ -625,9 +701,31 @@ with tab_cc:
                                 format="%.0f", min_value=0.0,
                             )
                             ed_rewards = st.text_input(
-                                "回贈 / 里數",
+                                "回贈 / 里數 說明",
                                 value=card.get("rewards") or "",
                                 placeholder="例：1% 現金回贈 / 飛行里數",
+                            )
+                            ed_rewards_rate = st.number_input(
+                                "回贈率 % (例 1 = 1% 現金回贈)",
+                                value=float(
+                                    (card.get("rewards_rate") or 0)
+                                    * 100),
+                                format="%.2f", min_value=0.0,
+                            )
+                            ed_rewards_type = st.selectbox(
+                                "回贈類型",
+                                ["cash 現金回贈", "miles 飛行里數",
+                                 "points 積分"],
+                                index=(
+                                    ["cash", "miles",
+                                      "points"].index(
+                                        card.get("rewards_type")
+                                        or "cash")
+                                    if card.get("rewards_type")
+                                       in ["cash", "miles",
+                                            "points"]
+                                    else 0
+                                ),
                             )
                         ed_notes = st.text_area(
                             "備註", card.get("notes") or "",
@@ -649,6 +747,11 @@ with tab_cc:
                                                     if ed_rate else None),
                                     annual_fee=ed_fee or None,
                                     rewards=ed_rewards or None,
+                                    rewards_rate=(
+                                        ed_rewards_rate / 100
+                                        if ed_rewards_rate else None
+                                    ),
+                                    rewards_type=ed_rewards_type.split()[0],
                                     notes=ed_notes or None,
                                 )
                                 st.success(f"✅ 已更新 {sel_code}")
@@ -729,8 +832,16 @@ with tab_cc:
                         value=0.0, format="%.0f", min_value=0.0,
                     )
                     n_rewards = st.text_input(
-                        "回贈 / 里數",
+                        "回贈 / 里數 說明",
                         placeholder="例：1% 現金回贈",
+                    )
+                    n_rewards_rate = st.number_input(
+                        "回贈率 % (例 1 = 1%)",
+                        value=0.0, format="%.2f", min_value=0.0,
+                    )
+                    n_rewards_type = st.selectbox(
+                        "回贈類型",
+                        ["cash", "miles", "points"],
                     )
                 n_notes = st.text_area(
                     "備註",
@@ -751,6 +862,10 @@ with tab_cc:
                                             if n_rate else None),
                             annual_fee=n_fee or None,
                             rewards=n_rewards or None,
+                            rewards_rate=(n_rewards_rate / 100
+                                          if n_rewards_rate
+                                          else None),
+                            rewards_type=n_rewards_type,
                             notes=n_notes or None,
                         )
                         st.success(

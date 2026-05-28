@@ -161,6 +161,55 @@ try:
                 "🔴 **高使用率警示**\n\n" + "\n\n".join(lines)
             )
 
+        # === 📅 還款行事曆（未來 30 日 timeline）===
+        upcoming_30d = sorted(
+            [c for c in card_details
+             if c["days_left"] is not None
+             and 0 <= c["days_left"] <= 30],
+            key=lambda x: x["days_left"],
+        )
+        if upcoming_30d:
+            st.markdown(
+                f"<h4 style='color:{C['text']};margin-top:0.5rem;'>"
+                f"📅 未來 30 日還款行事曆</h4>",
+                unsafe_allow_html=True,
+            )
+            cal_html = (
+                '<div style="background:white;'
+                'border:2px solid rgba(0,166,224,0.3);'
+                'border-radius:14px;padding:0.8rem 1rem;'
+                'box-shadow:0 4px 14px rgba(0,120,186,0.12);">'
+            )
+            for c in upcoming_30d:
+                # 顏色由倒數決定
+                if c["days_left"] <= 3:
+                    bg = "rgba(230,0,18,0.15)"
+                    edge = "#E60012"
+                elif c["days_left"] <= 7:
+                    bg = "rgba(255,199,0,0.18)"
+                    edge = "#FFC700"
+                else:
+                    bg = "rgba(0,166,224,0.10)"
+                    edge = "#00A6E0"
+                cal_html += (
+                    f'<div style="display:flex;align-items:center;'
+                    f'background:{bg};border-left:4px solid {edge};'
+                    f'border-radius:8px;padding:0.5rem 0.8rem;'
+                    f'margin:0.35rem 0;">'
+                    f'<div style="flex:0 0 70px;font-weight:700;'
+                    f'color:{edge};font-size:1.1rem;">'
+                    f'{c["days_left"]} 日</div>'
+                    f'<div style="flex:1;color:#1A1A2E;">'
+                    f'{c["icon"]} <b>{c["name"]}</b> '
+                    f'<span style="color:#6B7BA0;font-size:0.85rem;">'
+                    f'****{c["last4"]}</span></div>'
+                    f'<div style="flex:0 0 auto;font-weight:700;'
+                    f'color:#1A1A2E;font-size:1.05rem;">'
+                    f'${c["balance"]:,.0f}</div></div>'
+                )
+            cal_html += '</div>'
+            st.markdown(cal_html, unsafe_allow_html=True)
+
         st.write("")
 except Exception:
     # 信用卡資料庫未 migrate 或無資料 → 靜默跳過
