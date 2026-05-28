@@ -270,89 +270,99 @@ else:
 # ============ 新增貸款 ============
 st.divider()
 with st.expander("➕ 新增貸款", expanded=not bool(loans)):
-    with st.form("new_loan"):
-        n1, n2 = st.columns(2)
-        with n1:
-            nl_name = st.text_input(
-                "名稱",
-                placeholder="例：東亞 30 年按揭 / 中銀汽車貸款",
-            )
-            nl_type_label = st.selectbox(
-                "類型", list(LOAN_TYPES.values()))
-            nl_type = next(
-                (k for k, v in LOAN_TYPES.items()
-                 if v == nl_type_label), "other")
-            nl_bank = st.text_input(
-                "銀行 / 機構",
-                placeholder="例：HSBC / BEA / 中銀",
-            )
-            nl_start = st.date_input(
-                "開始日", _d.today())
-        with n2:
-            nl_principal = st.number_input(
-                "本金 (HKD)",
-                value=100000.0, min_value=0.0, format="%.2f",
-            )
-            nl_rate = st.number_input(
-                "年利率 % (例 4.5)",
-                value=4.5, min_value=0.0, format="%.3f",
-            )
-            nl_term = st.number_input(
-                "期數（月）",
-                value=360, min_value=1, step=1,
-                help="按揭 30 年 = 360, 5 年 = 60",
-            )
-            nl_due = st.number_input(
-                "每月還款日 (1-31)",
-                value=1, min_value=1, max_value=31, step=1,
-            )
-
-        # 即時試算（用純 HTML 避開 Streamlit 將 $ 當 LaTeX 嘅 bug）
-        try:
-            if nl_principal > 0:
-                preview_emi = pfdb.calc_monthly_payment(
-                    nl_principal, nl_rate / 100, nl_term)
-                preview_total = preview_emi * nl_term
-                preview_interest = preview_total - nl_principal
-                pct = preview_interest / nl_principal * 100
-                st.markdown(
-                    f"""
-                    <div style="background:rgba(0,166,224,0.12);
-                                border-left:4px solid #00A6E0;
-                                border-radius:10px;
-                                padding:0.8rem 1.1rem;
-                                color:#1A1A2E;
-                                font-size:0.95rem;
-                                line-height:1.6;
-                                margin:0.6rem 0;">
-                        📊 <b>試算</b><br>
-                        每月供款：
-                        <b style="color:#0078BA;font-size:1.1rem;">
-                            HK${preview_emi:,.2f}
-                        </b><br>
-                        總還款：<b>HK${preview_total:,.0f}</b>
-                        &nbsp;·&nbsp;
-                        總利息：<b style="color:#E60012;">
-                            HK${preview_interest:,.0f}
-                        </b>
-                        <span style="color:#6B7BA0;">
-                            ({pct:.1f}%)
-                        </span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        except Exception:
-            pass
-
-        nl_notes = st.text_area(
-            "備註（選填）",
-            placeholder="例：罰息期 / 提前還款條款",
+    # 注意：唔用 st.form，等試算可即時更新
+    n1, n2 = st.columns(2)
+    with n1:
+        nl_name = st.text_input(
+            "名稱",
+            placeholder="例：東亞 30 年按揭 / 中銀汽車貸款",
+            key="nl_name",
+        )
+        nl_type_label = st.selectbox(
+            "類型", list(LOAN_TYPES.values()),
+            key="nl_type_label",
+        )
+        nl_type = next(
+            (k for k, v in LOAN_TYPES.items()
+             if v == nl_type_label), "other")
+        nl_bank = st.text_input(
+            "銀行 / 機構",
+            placeholder="例：HSBC / BEA / 中銀",
+            key="nl_bank",
+        )
+        nl_start = st.date_input(
+            "開始日", _d.today(), key="nl_start")
+    with n2:
+        nl_principal = st.number_input(
+            "本金 (HKD)",
+            value=100000.0, min_value=0.0, format="%.2f",
+            key="nl_principal",
+        )
+        nl_rate = st.number_input(
+            "年利率 % (例 4.5)",
+            value=4.5, min_value=0.0, format="%.3f",
+            key="nl_rate",
+        )
+        nl_term = st.number_input(
+            "期數（月）",
+            value=360, min_value=1, step=1,
+            help="按揭 30 年 = 360, 5 年 = 60",
+            key="nl_term",
+        )
+        nl_due = st.number_input(
+            "每月還款日 (1-31)",
+            value=1, min_value=1, max_value=31, step=1,
+            key="nl_due",
         )
 
-        if st.form_submit_button(
-                "✨ 建立貸款", type="primary",
-                use_container_width=True):
+    # 即時試算（即時更新！）
+    try:
+        if nl_principal > 0:
+            preview_emi = pfdb.calc_monthly_payment(
+                nl_principal, nl_rate / 100, nl_term)
+            preview_total = preview_emi * nl_term
+            preview_interest = preview_total - nl_principal
+            pct = preview_interest / nl_principal * 100
+            st.markdown(
+                f"""
+                <div style="background:rgba(0,166,224,0.12);
+                            border-left:4px solid #00A6E0;
+                            border-radius:10px;
+                            padding:0.8rem 1.1rem;
+                            color:#1A1A2E;
+                            font-size:0.95rem;
+                            line-height:1.6;
+                            margin:0.6rem 0;">
+                    📊 <b>即時試算</b>（隨輸入自動更新）<br>
+                    每月供款：
+                    <b style="color:#0078BA;font-size:1.15rem;">
+                        HK${preview_emi:,.2f}
+                    </b><br>
+                    總還款：<b>HK${preview_total:,.0f}</b>
+                    &nbsp;·&nbsp;
+                    總利息：<b style="color:#E60012;">
+                        HK${preview_interest:,.0f}
+                    </b>
+                    <span style="color:#6B7BA0;">
+                        ({pct:.1f}%)
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    except Exception:
+        pass
+
+    nl_notes = st.text_area(
+        "備註（選填）",
+        placeholder="例：罰息期 / 提前還款條款",
+        key="nl_notes",
+    )
+
+    if st.button(
+            "✨ 建立貸款", type="primary",
+            use_container_width=True,
+            key="nl_create_btn"):
             if not nl_name.strip():
                 st.error("名稱不能為空")
             elif nl_principal <= 0:
