@@ -91,13 +91,49 @@ def inject_glass_style():
     }}
     [data-testid="stSidebarNav"] {{ display: none !important; }}
 
-    /* ============ 主內容區 ============ */
+    /* ============ 主內容區 + 平滑切頁動畫 ============ */
     .main .block-container {{
         padding-top: 2rem;
         padding-bottom: 3rem;
         max-width: 1400px;
         position: relative;
         z-index: 1;
+        /* 切頁時淡入，消除閃白感 */
+        animation: pageFadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }}
+    @keyframes pageFadeIn {{
+        from {{
+            opacity: 0;
+            transform: translateY(8px);
+        }}
+        to {{
+            opacity: 1;
+            transform: translateY(0);
+        }}
+    }}
+
+    /* 側欄都加 fade-in（同步效果）*/
+    [data-testid="stSidebar"] {{
+        animation: sidebarFadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }}
+    @keyframes sidebarFadeIn {{
+        from {{ opacity: 0; }}
+        to {{ opacity: 1; }}
+    }}
+
+    /* 隱藏 Streamlit 預設「Running...」紅色 indicator
+       因為我哋有自己嘅 spinner，避免雙重視覺干擾 */
+    [data-testid="stStatusWidget"] {{
+        display: none !important;
+    }}
+
+    /* 強制 body 一開始就有漸層，避免閃白底 */
+    html, body, .stApp {{
+        background: linear-gradient(135deg,
+            {PALETTE['bg_a']} 0%,
+            {PALETTE['bg_b']} 50%,
+            {PALETTE['bg_c']} 100%) !important;
+        background-attachment: fixed !important;
     }}
 
     /* ============ 主區文字（深色，在淺背景上）============ */
