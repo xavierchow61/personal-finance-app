@@ -63,12 +63,28 @@ def adapt_sql(sql: str) -> str:
         "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         out, flags=re.IGNORECASE,
     )
-    # 4. INSERT OR REPLACE → INSERT ON CONFLICT
-    # （注意：UNIQUE col 必須喺 schema 有定義；無 → 仍然會 fail）
-    # 因 SQLite 用法多樣，我哋只做最簡單 INSERT OR IGNORE 轉換
+    # 4. INSERT OR IGNORE → INSERT (caller 須加 ON CONFLICT DO NOTHING)
     out = re.sub(
         r"INSERT\s+OR\s+IGNORE\s+INTO",
-        "INSERT INTO",  # caller 須加 ON CONFLICT DO NOTHING
+        "INSERT INTO",
+        out, flags=re.IGNORECASE,
+    )
+    # 5. strftime('%Y-%m', col) → TO_CHAR(col::date, 'YYYY-MM')
+    out = re.sub(
+        r"strftime\(\s*['\"]%Y-%m['\"]\s*,\s*([^)]+)\)",
+        r"TO_CHAR((\1)::date, 'YYYY-MM')",
+        out, flags=re.IGNORECASE,
+    )
+    # 6. strftime('%Y', col) → TO_CHAR(col::date, 'YYYY')
+    out = re.sub(
+        r"strftime\(\s*['\"]%Y['\"]\s*,\s*([^)]+)\)",
+        r"TO_CHAR((\1)::date, 'YYYY')",
+        out, flags=re.IGNORECASE,
+    )
+    # 7. strftime('%Y-%m-%d', col) → TO_CHAR(col::date, 'YYYY-MM-DD')
+    out = re.sub(
+        r"strftime\(\s*['\"]%Y-%m-%d['\"]\s*,\s*([^)]+)\)",
+        r"TO_CHAR((\1)::date, 'YYYY-MM-DD')",
         out, flags=re.IGNORECASE,
     )
     return out

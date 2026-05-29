@@ -101,6 +101,8 @@ def spending_by_category(start_date: str, end_date: str,
         start_date / end_date: YYYY-MM-DD
         period: 用嚟揾 budget（'YYYY-MM' 格式）。如果係月度先有意義
     """
+    # 注意：PG 嚴格，HAVING 內唔可以用 alias `amount`，要用完整 expression
+    # 同時 GROUP BY 要包埋 SELECT 內所有非 aggregate 嘅欄位
     sql = """
         SELECT jl.account_code,
                a.name, a.icon, a.color,
@@ -110,8 +112,9 @@ def spending_by_category(start_date: str, end_date: str,
         JOIN accounts a ON a.code=jl.account_code
         WHERE a.account_type='expense'
           AND je.entry_date BETWEEN ? AND ?
-        GROUP BY jl.account_code
-        HAVING amount > 0
+        GROUP BY jl.account_code, a.name, a.icon, a.color
+        HAVING COALESCE(SUM((jl.debit - jl.credit)
+                              * COALESCE(je.fx_rate, 1)), 0) > 0
         ORDER BY amount DESC
     """
     from .db import _conn
@@ -264,7 +267,7 @@ def project_spending(project_id: int) -> dict:
         JOIN journal_entries je ON je.entry_id=jl.entry_id
         JOIN accounts a ON a.code=jl.account_code
         WHERE je.project_id=? AND a.account_type='expense'
-        GROUP BY jl.account_code
+        GROUP BY jl.account_code, a.name, a.icon
         ORDER BY amount DESC
     """
     from .db import _conn
@@ -367,6 +370,7 @@ def income_statement(start_date: str, end_date: str) -> dict:
 
     # ⚠️ 必須用 INNER JOIN — 之前用 LEFT JOIN 加 date filter 喺 ON clause
     # 會錯誤包含舊期 entries（因為 jl 行被保留即使 je date 唔 match）
+    # PG 嚴格：HAVING 用 expression、GROUP BY 包埋所有 SELECT 非 aggregate
     sql = """
         SELECT a.code, a.name, a.account_type, a.icon,
                COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0) AS total_dr,
@@ -376,9 +380,12 @@ def income_statement(start_date: str, end_date: str) -> dict:
         INNER JOIN journal_entries je ON je.entry_id=jl.entry_id
         WHERE a.account_type IN ('income', 'expense')
           AND je.entry_date BETWEEN ? AND ?
-        GROUP BY a.code
-        HAVING total_dr > 0 OR total_cr > 0
-        ORDER BY a.account_type DESC, total_cr - total_dr DESC
+        GROUP BY a.code, a.name, a.account_type, a.icon
+        HAVING COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0) > 0
+            OR COALESCE(SUM(jl.credit * COALESCE(je.fx_rate, 1)), 0) > 0
+        ORDER BY a.account_type DESC,
+                 COALESCE(SUM(jl.credit * COALESCE(je.fx_rate, 1)), 0)
+                 - COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0) DESC
     """
     with _conn() as c:
         rows = c.execute(sql, (start_date, end_date)).fetchall()
