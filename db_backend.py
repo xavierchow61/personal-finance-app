@@ -87,6 +87,50 @@ def adapt_sql(sql: str) -> str:
         r"TO_CHAR((\1)::date, 'YYYY-MM-DD')",
         out, flags=re.IGNORECASE,
     )
+    # 8. GROUP_CONCAT(expr, separator) → STRING_AGG(expr::text, separator)
+    # SQLite: GROUP_CONCAT(col, '|')
+    # PG:     STRING_AGG(col::text, '|')
+    # PG 要求 STRING_AGG 第一 arg 係 text，所以加 ::text cast
+    def _convert_group_concat(m):
+        args = m.group(1).strip()
+        # 分開最後一個 , 為 separator（如有）
+        # GROUP_CONCAT(expr) → STRING_AGG(expr::text, ',') (default)
+        # GROUP_CONCAT(expr, sep) → STRING_AGG(expr::text, sep)
+        # 用平衡括號邏輯做簡易分隔
+        depth = 0
+        last_comma = -1
+        in_str = False
+        str_char = None
+        for i, ch in enumerate(args):
+            if in_str:
+                if ch == str_char:
+                    in_str = False
+                continue
+            if ch in ("'", '"'):
+                in_str = True
+                str_char = ch
+                continue
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            elif ch == ',' and depth == 0:
+                last_comma = i
+        if last_comma >= 0:
+            expr = args[:last_comma].strip()
+            sep = args[last_comma + 1:].strip()
+        else:
+            expr = args
+            sep = "','"
+        return f"STRING_AGG(({expr})::text, {sep})"
+
+    out = re.sub(
+        r"GROUP_CONCAT\(((?:[^()]|\([^()]*\))*)\)",
+        _convert_group_concat,
+        out, flags=re.IGNORECASE,
+    )
+    # 9. IFNULL → COALESCE (SQLite-only function)
+    out = re.sub(r"\bIFNULL\b", "COALESCE", out, flags=re.IGNORECASE)
     return out
 
 
