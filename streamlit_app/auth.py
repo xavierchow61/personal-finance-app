@@ -489,7 +489,10 @@ def render_logout_section():
         )
 
 
-# 偵測 ?logout=1 query param 觸發登出
+# ============================================================
+# Query param 偵測（logout + magic link callback + email confirm）
+# ============================================================
+
 def _check_logout_query():
     try:
         if st.query_params.get("logout") == "1":
@@ -500,8 +503,59 @@ def _check_logout_query():
         pass
 
 
-# Integration with app_header
+def _check_auth_callback():
+    """處理 Magic Link / Email confirm 回調
+
+    Supabase 完成驗證後會 redirect 帶以下 URL params：
+    - ?access_token=...&refresh_token=...&type=magiclink
+    - ?type=signup&access_token=...
+    - ?type=recovery&access_token=...
+
+    我哋要：
+    1. 攞到 token
+    2. set session 入 client
+    3. 清 URL params
+    4. rerun 進入正常 flow
+    """
+    try:
+        qp = st.query_params
+        access_token = qp.get("access_token")
+        refresh_token = qp.get("refresh_token")
+        if not access_token:
+            return
+
+        client = _get_supabase_client()
+        if not client:
+            return
+
+        # 將 token 設入 session
+        try:
+            resp = client.auth.set_session(
+                access_token, refresh_token or "")
+            user = resp.user if hasattr(resp, "user") else None
+            if user:
+                st.session_state["auth_user"] = {
+                    "id": user.id,
+                    "email": user.email,
+                }
+                # 清 URL params 避免無限 loop
+                st.query_params.clear()
+                # 顯示成功訊息
+                st.toast("✅ 登入成功！正在載入...", icon="🎉")
+                st.rerun()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def init_auth():
-    """app_header 開頭 call。處理 logout query param + require_login"""
+    """app_header 開頭 call。
+    處理順序：
+    1. Magic Link / Email confirm callback（URL params）
+    2. Logout query param
+    3. require_login
+    """
+    _check_auth_callback()
     _check_logout_query()
     require_login()

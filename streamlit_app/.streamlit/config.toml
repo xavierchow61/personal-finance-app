@@ -1,7 +1,8 @@
 [theme]
 base = "light"
 primaryColor = "#00A6E0"
-backgroundColor = "#E0F4FC"
+# 嘗試用更接近主漸層嘅顏色做 base，減少 page reload 時嘅閃白
+backgroundColor = "#B3E5FC"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#1A1A2E"
 font = "sans serif"
