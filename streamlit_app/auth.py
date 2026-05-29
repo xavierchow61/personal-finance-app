@@ -198,16 +198,57 @@ def _friendly_error(err: str) -> str:
 
 def require_login():
     """喺每個頁面開頭 call。
-    - 若 Supabase 未設定 → 跳過（本地 demo 模式）
+    - 若 Supabase 未設定 → 顯示警告 banner 並跳過
     - 若已登入 → 繼續
     - 若未登入 → 渲染登入畫面 + st.stop()
     """
     if not _is_enabled():
-        return  # 本地 demo 模式
+        # 顯示診斷資訊（方便排查）
+        _render_auth_disabled_banner()
+        return
     if is_authenticated():
         return
     _render_login_page()
     st.stop()
+
+
+def _render_auth_disabled_banner():
+    """當 Supabase Auth 未配置 → 顯示一個診斷 banner"""
+    url_set = bool(os.getenv("SUPABASE_URL") or _safe_secret("SUPABASE_URL"))
+    key_set = bool(os.getenv("SUPABASE_ANON_KEY")
+                    or _safe_secret("SUPABASE_ANON_KEY"))
+
+    # 嘗試 import supabase 看是否安裝
+    pkg_installed = False
+    try:
+        import supabase as _sb  # noqa
+        pkg_installed = True
+    except ImportError:
+        pass
+
+    status = (
+        f"📦 supabase package: {'✅ 已安裝' if pkg_installed else '❌ 未安裝'}<br>"
+        f"🌐 SUPABASE_URL: {'✅ 已設定' if url_set else '❌ 未設定'}<br>"
+        f"🔑 SUPABASE_ANON_KEY: {'✅ 已設定' if key_set else '❌ 未設定'}"
+    )
+
+    st.markdown(
+        f"""
+        <div style="background:rgba(255,199,0,0.18);
+                    border:2px solid rgba(230,0,18,0.5);
+                    border-radius:12px;padding:0.9rem 1.2rem;
+                    margin-bottom:1rem;color:#1A1A2E;font-size:0.9rem;">
+            <b>⚠️ Supabase Auth 未啟用</b><br>
+            <small>{status}</small><br>
+            <small style="color:#6B7BA0;margin-top:0.4rem;display:block;">
+                請在 Streamlit Cloud → Settings → Secrets 設定
+                SUPABASE_URL + SUPABASE_ANON_KEY，
+                然後等部署完成（約 2 分鐘安裝 supabase 套件）。
+            </small>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ============================================================
