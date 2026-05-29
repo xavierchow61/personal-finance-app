@@ -67,13 +67,60 @@ def account_balance(account_code: str,
 
 
 def all_account_balances(as_of_date: str | None = None) -> list[dict]:
-    """每個 account 嘅 balance + type，sorted by type 再 sort_order"""
-    accs = db.list_accounts(active_only=True)
+    """每個 account 嘅 balance + type — 優化版單一 SQL query。
+
+    舊版對每個 account 跑一條 query（N × round trip），
+    雲端 PG 上會慢到 3 分鐘。
+    新版用 LEFT JOIN 一次過攞晒所有 account 嘅 balance。
+    """
+    # 日期 filter 放喺 ON clause 而非 WHERE，
+    # 確保無 entries 嘅 account 仍會出現（balance = opening）
+    date_join = ""
+    params = []
+    if as_of_date:
+        date_join = "AND je.entry_date <= ?"
+        params.append(as_of_date)
+
+    sql = f"""
+        SELECT a.code, a.name, a.account_type, a.icon, a.color,
+               a.currency, a.opening_balance, a.sort_order,
+               COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0)
+                   AS total_dr,
+               COALESCE(SUM(jl.credit * COALESCE(je.fx_rate, 1)), 0)
+                   AS total_cr
+        FROM accounts a
+        LEFT JOIN journal_lines jl ON jl.account_code = a.code
+        LEFT JOIN journal_entries je
+            ON je.entry_id = jl.entry_id {date_join}
+        WHERE a.is_active = 1
+        GROUP BY a.code, a.name, a.account_type, a.icon, a.color,
+                 a.currency, a.opening_balance, a.sort_order
+        ORDER BY a.account_type, a.sort_order, a.name
+    """
+
+    from .db import _conn
+    with _conn() as c:
+        rows = c.execute(sql, params).fetchall()
+
     out = []
-    for a in accs:
+    for r in rows:
+        opening = float(r["opening_balance"] or 0)
+        total_dr = float(r["total_dr"] or 0)
+        total_cr = float(r["total_cr"] or 0)
+        if r["account_type"] in ("asset", "expense"):
+            balance = opening + total_dr - total_cr
+        else:  # liability / income
+            balance = opening + total_cr - total_dr
         out.append({
-            **a,
-            "balance": account_balance(a["code"], as_of_date),
+            "code": r["code"],
+            "name": r["name"],
+            "account_type": r["account_type"],
+            "icon": r["icon"],
+            "color": r["color"],
+            "currency": r["currency"],
+            "opening_balance": opening,
+            "sort_order": r["sort_order"] if "sort_order" in r else 0,
+            "balance": balance,
         })
     return out
 
