@@ -358,9 +358,9 @@ def app_header(title: str = "", emoji: str = "💰",
     4. 若 title 非空，渲染玻璃漸層標題
     """
     inject_glass_style()
-    # 登入閘門（secrets 無設用戶 = 跳過，本地開發模式）
-    from auth import require_login, render_logout_section
-    require_login()
+    # Supabase Auth 閘門（無 SUPABASE_URL 設定 = 跳過，本地 demo 模式）
+    from auth import init_auth, render_logout_section
+    init_auth()  # 處理 ?logout=1 + require_login
     render_sidebar_nav()
     render_logout_section()
     if title:

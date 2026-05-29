@@ -32,3 +32,6 @@ pypdfium2>=4.0.0
 
 # === Supabase / PostgreSQL（雲端 DB）===
 psycopg[binary]>=3.2.0
+
+# === Supabase Auth + REST API（Email + Magic Link + 忘記密碼）===
+supabase>=2.30.0
