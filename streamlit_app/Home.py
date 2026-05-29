@@ -21,6 +21,7 @@ app_header("")
 check_api_key()
 
 from personal_finance import reports as pfr
+import cached_pfr  # cached wrappers for speed
 
 PERIODS = {
     "本月": "this_month",
@@ -32,14 +33,14 @@ PERIODS = {
 col_sel, _ = st.columns([2, 5])
 period_label = col_sel.selectbox("📅 期間", list(PERIODS.keys()), index=0)
 period_type = PERIODS[period_label]
-start, end = pfr.period_dates(period_type)
+start, end = cached_pfr.period_dates(period_type)
 
-# === KPI 卡片（加 spinner + 防呆）===
+# === KPI 卡片（用 cached pfr 加速 + 防呆）===
 as_of = end if period_type != "all" else None
 try:
     with st.spinner("📊 載入資料中..."):
-        nw = pfr.net_worth(as_of)
-        pl = pfr.income_statement(start, end)
+        nw = cached_pfr.net_worth(as_of)
+        pl = cached_pfr.income_statement(start, end)
 except Exception as ex:
     st.error(
         f"⚠️ 無法載入資料：{type(ex).__name__}\n\n"
@@ -104,7 +105,8 @@ try:
         today_d = _d.today()
         for cc in cards_with_limit:
             code = cc["account_code"]
-            balance = abs(pfr.account_balance(code, in_hkd=True))
+            balance = abs(cached_pfr.account_balance(code,
+                                                       in_hkd=True))
             limit = float(cc["credit_limit"])
             total_limit += limit
             total_used += balance
@@ -236,7 +238,7 @@ with left:
         f"<h3 style='color:{C['text']}'>🥧 各類別支出佔比</h3>",
         unsafe_allow_html=True,
     )
-    cats = pfr.spending_by_category(start, end)
+    cats = cached_pfr.spending_by_category(start, end)
     if cats:
         import plotly.express as px
         import pandas as pd
@@ -282,7 +284,7 @@ with right:
         unsafe_allow_html=True,
     )
     import database as invdb
-    top = invdb.top_n_by_amount(5)
+    top = cached_pfr.invoices_top_n_by_amount(5)
     if top:
         import pandas as pd
         df = pd.DataFrame([
@@ -309,7 +311,7 @@ st.markdown(
     f"<h3 style='color:{C['text']}'>🏦 各帳戶餘額</h3>",
     unsafe_allow_html=True,
 )
-balances = pfr.all_account_balances(as_of)
+balances = cached_pfr.all_account_balances(as_of)
 assets = [b for b in balances if b["account_type"] == "asset"]
 liabs = [b for b in balances if b["account_type"] == "liability"]
 
