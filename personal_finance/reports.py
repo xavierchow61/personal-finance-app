@@ -575,3 +575,4 @@ def period_compare(period_a: str = "this_month",
         "net_diff": is_a["net"] - is_b["net"],
         "categories": cats,
     }
+
