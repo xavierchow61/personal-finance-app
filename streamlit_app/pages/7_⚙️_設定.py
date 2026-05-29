@@ -282,11 +282,18 @@ with tab_acc:
                          if a["account_type"] == type_code]
 
     if all_accs:
+        # 建 code → name 對照表，方便顯示父帳戶
+        _name_by_code = {a["code"]: a["name"] for a in all_accs}
+
         df_acc = pd.DataFrame([
             {
                 "代碼": a["code"],
                 "圖示": a.get("icon") or "",
                 "名稱": a["name"],
+                "父帳戶": (
+                    _name_by_code.get(a.get("parent_code"), "—")
+                    if a.get("parent_code") else "—"
+                ),
                 "類型": ACCOUNT_TYPE_LABELS.get(
                     a["account_type"], a["account_type"]),
                 "幣別": a.get("currency") or "HKD",
@@ -354,6 +361,36 @@ with tab_acc:
                                 "啟用此帳戶",
                                 value=bool(acc.get("is_active")),
                             )
+                        # 父帳戶 selectbox（同類型嘅 accounts 可以做 parent，自己除外）
+                        same_type_accs = [
+                            a for a in all_accs
+                            if a["account_type"] == acc["account_type"]
+                            and a["code"] != sel_code
+                        ]
+                        parent_options = ["（無 — 頂層帳戶）"] + [
+                            f"{a.get('icon') or ''} {a['name']} ({a['code']})"
+                            for a in same_type_accs
+                        ]
+                        cur_parent = acc.get("parent_code")
+                        cur_parent_idx = 0
+                        if cur_parent:
+                            for i, a in enumerate(same_type_accs, start=1):
+                                if a["code"] == cur_parent:
+                                    cur_parent_idx = i
+                                    break
+                        sel_parent = st.selectbox(
+                            "🌳 父帳戶（將此帳戶歸類在某個帳戶之下）",
+                            parent_options,
+                            index=cur_parent_idx,
+                            help="例：Mox 信用卡 / Mox 保險 → 父帳戶 = Mox Bank",
+                        )
+                        new_parent = (
+                            same_type_accs[
+                                parent_options.index(sel_parent) - 1
+                            ]["code"]
+                            if sel_parent != parent_options[0] else None
+                        )
+
                         new_notes = st.text_area(
                             "備註", acc.get("notes") or "")
 
@@ -371,6 +408,7 @@ with tab_acc:
                                     sort_order=new_sort,
                                     icon=new_icon or None,
                                     notes=new_notes or None,
+                                    parent_code=new_parent,
                                 )
                                 # 處理 is_active（upsert 無此欄位，
                                 # 直接 raw SQL）
@@ -438,6 +476,25 @@ with tab_acc:
                     ["HKD", "USD", "JPY", "CNY", "EUR",
                       "GBP", "AUD", "SGD", "TWD"],
                 )
+            # 父帳戶（樹狀結構）
+            same_type_candidates = [
+                a for a in all_accs if a["account_type"] == na_type
+            ]
+            parent_opts = ["（無 — 頂層帳戶）"] + [
+                f"{a.get('icon') or ''} {a['name']} ({a['code']})"
+                for a in same_type_candidates
+            ]
+            na_parent_sel = st.selectbox(
+                "🌳 父帳戶（選填，將此帳戶歸類在某帳戶之下）",
+                parent_opts,
+                help="例：建立「Mox 信用卡」時揀父帳戶 = Mox Bank",
+            )
+            na_parent = (
+                same_type_candidates[
+                    parent_opts.index(na_parent_sel) - 1
+                ]["code"]
+                if na_parent_sel != parent_opts[0] else None
+            )
             na_notes = st.text_input("備註（選填）", "")
 
             if st.form_submit_button(
@@ -460,6 +517,7 @@ with tab_acc:
                             currency=na_currency,
                             icon=na_icon or None,
                             notes=na_notes or None,
+                            parent_code=na_parent,
                         )
                         st.success(
                             f"✅ 建立成功：{na_icon or ''} {na_name} "
