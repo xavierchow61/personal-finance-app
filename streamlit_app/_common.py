@@ -376,11 +376,18 @@ def kpi_card(col, label: str, value, color: str = None, emoji: str = "",
 
 
 def init_dbs():
-    """確保資料庫已建立及完成初始化"""
+    """確保資料庫已建立及完成初始化
+
+    用 session_state cache — 只首次 page load 跑，
+    之後 reload 自動跳過（避免每次 3 秒 Supabase round trip）
+    """
+    if st.session_state.get("_dbs_initialized"):
+        return
     from personal_finance import db as pfdb, seed as pfseed
     pfdb.init_db()
     if not pfdb.list_accounts(active_only=False):
         pfseed.seed_all()
+    st.session_state["_dbs_initialized"] = True
 
 
 def check_api_key():

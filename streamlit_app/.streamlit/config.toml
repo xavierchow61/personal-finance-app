@@ -1,8 +1,8 @@
 [theme]
 base = "light"
 primaryColor = "#00A6E0"
-# 嘗試用更接近主漸層嘅顏色做 base，減少 page reload 時嘅閃白
-backgroundColor = "#B3E5FC"
+# 用主漸層中間色（#7DD3FC）做 base，閃白時都接近主題
+backgroundColor = "#7DD3FC"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#1A1A2E"
 font = "sans serif"
