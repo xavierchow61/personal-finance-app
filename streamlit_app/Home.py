@@ -34,10 +34,21 @@ period_label = col_sel.selectbox("📅 期間", list(PERIODS.keys()), index=0)
 period_type = PERIODS[period_label]
 start, end = pfr.period_dates(period_type)
 
-# === KPI 卡片 ===
+# === KPI 卡片（加 spinner + 防呆）===
 as_of = end if period_type != "all" else None
-nw = pfr.net_worth(as_of)
-pl = pfr.income_statement(start, end)
+try:
+    with st.spinner("📊 載入資料中..."):
+        nw = pfr.net_worth(as_of)
+        pl = pfr.income_statement(start, end)
+except Exception as ex:
+    st.error(
+        f"⚠️ 無法載入資料：{type(ex).__name__}\n\n"
+        f"{ex}\n\n"
+        "若係首次用，可能需要等 1-2 分鐘建立帳戶。"
+    )
+    nw = {"assets": 0, "liabilities": 0, "net_worth": 0}
+    pl = {"total_expense": 0, "total_income": 0, "net": 0,
+          "income": [], "expense": []}
 
 c1, c2, c3, c4 = st.columns(4)
 kpi_card(c1, "資產總額", nw["assets"], C["success"], "💰", "HKD")

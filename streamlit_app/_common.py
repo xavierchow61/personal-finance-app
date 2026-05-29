@@ -384,10 +384,22 @@ def init_dbs():
     if st.session_state.get("_dbs_initialized"):
         return
     from personal_finance import db as pfdb, seed as pfseed
-    pfdb.init_db()
-    if not pfdb.list_accounts(active_only=False):
-        pfseed.seed_all()
-    st.session_state["_dbs_initialized"] = True
+    try:
+        with st.spinner("🔧 首次連接資料庫，請耐心等候..."):
+            pfdb.init_db()
+            # 若帳戶 < 10 個（標準 seed 應有 30+）→ 強制 re-seed
+            existing = pfdb.list_accounts(active_only=False)
+            if len(existing) < 10:
+                with st.spinner(
+                    "🌱 建立預設帳戶與付款方式（首次需 1-2 分鐘）..."
+                ):
+                    pfseed.seed_all()
+        st.session_state["_dbs_initialized"] = True
+    except Exception as ex:
+        st.error(
+            f"⚠️ 資料庫初始化失敗：{type(ex).__name__}: {ex}\n\n"
+            "請嘗試重新整理，或聯絡管理員。"
+        )
 
 
 def check_api_key():
