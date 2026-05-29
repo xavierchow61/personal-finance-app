@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     invoice_id INTEGER,                        -- link to invoices.db invoices.id
     project_id INTEGER,                        -- optional
     notes TEXT,
+    currency TEXT DEFAULT 'HKD',               -- 多幣別
+    fx_rate REAL DEFAULT 1.0,                  -- 對 HKD 嘅匯率
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(project_id)
 );
@@ -141,6 +143,8 @@ CREATE TABLE IF NOT EXISTS fx_rates (
 -- ============ CREDIT CARDS ============
 -- 信用卡額外資料（額度、結算日、還款日、利率…）
 -- account_code 必須對應一個 type='liability' 嘅 account
+-- 注意：rewards_rate / rewards_type 已內建（之前用 ALTER 加，
+-- 但 PG 上唔可靠，索性放入 CREATE TABLE）
 CREATE TABLE IF NOT EXISTS credit_cards (
     card_id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_code TEXT UNIQUE NOT NULL,
@@ -210,6 +214,23 @@ def _column_exists(con, table: str, column: str) -> bool:
         return column in cols
 
 
+def _safe_add_column(con, table: str, column: str, defn: str):
+    """安全加 column。已存在 / 表不存在 → 靜默跳過"""
+    try:
+        if _column_exists(con, table, column):
+            return
+        con.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {defn}"
+        )
+    except Exception:
+        # 表唔存在或其他無法處理嘅錯 → 跳過
+        if IS_POSTGRES:
+            try:
+                con.rollback()   # PG 失敗要清 transaction
+            except Exception:
+                pass
+
+
 _INIT_DONE = False
 
 
@@ -224,6 +245,16 @@ def init_db(force: bool = False):
     _INIT_DONE = True   # 提前 set 避免 recursive call
     with _conn() as c:
         c.executescript(SCHEMA)
+        # === 對舊 PG schema 嘅救援補丁 ===
+        # 確保關鍵 column 一定存在（即使 SCHEMA 改動前已 deploy）
+        _safe_add_column(c, "journal_entries",
+                          "currency", "TEXT DEFAULT 'HKD'")
+        _safe_add_column(c, "journal_entries",
+                          "fx_rate", "REAL DEFAULT 1.0")
+        _safe_add_column(c, "credit_cards",
+                          "rewards_rate", "REAL")
+        _safe_add_column(c, "credit_cards",
+                          "rewards_type", "TEXT")
         # Migration：journal_entries 加 currency / fx_rate / hkd_amount
         if not _column_exists(c, "journal_entries", "currency"):
             c.execute("ALTER TABLE journal_entries ADD COLUMN "
