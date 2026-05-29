@@ -35,21 +35,27 @@ period_label = col_sel.selectbox("📅 期間", list(PERIODS.keys()), index=0)
 period_type = PERIODS[period_label]
 start, end = cached_pfr.period_dates(period_type)
 
-# === KPI 卡片（用 cached pfr 加速 + 防呆）===
+# === 🚀 並行 fetch 所有 dashboard data（一次過載入，由 ~25s 降至 ~5s）===
 as_of = end if period_type != "all" else None
 try:
-    with st.spinner("📊 載入資料中..."):
-        nw = cached_pfr.net_worth(as_of)
-        pl = cached_pfr.income_statement(start, end)
+    with st.spinner("📊 並行載入所有資料中（首次需 5-10 秒）..."):
+        bundle = cached_pfr.fetch_dashboard_bundle(as_of, start, end)
+    nw = bundle["net_worth"]
+    pl = bundle["income_statement"]
+    spending_cats = bundle["spending_by_category"]
+    top_invoices = bundle["top_invoices"]
+    all_balances_data = bundle["all_balances"]
 except Exception as ex:
     st.error(
-        f"⚠️ 無法載入資料：{type(ex).__name__}\n\n"
-        f"{ex}\n\n"
+        f"⚠️ 無法載入資料：{type(ex).__name__}\n\n{ex}\n\n"
         "若係首次用，可能需要等 1-2 分鐘建立帳戶。"
     )
     nw = {"assets": 0, "liabilities": 0, "net_worth": 0}
     pl = {"total_expense": 0, "total_income": 0, "net": 0,
           "income": [], "expense": []}
+    spending_cats = []
+    top_invoices = []
+    all_balances_data = []
 
 c1, c2, c3, c4 = st.columns(4)
 kpi_card(c1, "資產總額", nw["assets"], C["success"], "💰", "HKD")
@@ -88,9 +94,10 @@ try:
                     year=y, month=m, day=min(due_day, last))
         return target
 
-    cards = pfdb.list_credit_cards()
-    cards_with_limit = [c for c in cards
-                         if (c.get("credit_limit") or 0) > 0]
+    # 用並行 bundle，一次過攞所有卡 balance（並行）
+    cc_bundle = cached_pfr.fetch_credit_cards_bundle()
+    cards_with_limit = cc_bundle["cards"]
+    cc_balances = cc_bundle["balances"]
 
     if cards_with_limit:
         st.markdown(
@@ -105,8 +112,7 @@ try:
         today_d = _d.today()
         for cc in cards_with_limit:
             code = cc["account_code"]
-            balance = abs(cached_pfr.account_balance(code,
-                                                       in_hkd=True))
+            balance = abs(cc_balances.get(code, 0))
             limit = float(cc["credit_limit"])
             total_limit += limit
             total_used += balance
@@ -238,7 +244,7 @@ with left:
         f"<h3 style='color:{C['text']}'>🥧 各類別支出佔比</h3>",
         unsafe_allow_html=True,
     )
-    cats = cached_pfr.spending_by_category(start, end)
+    cats = spending_cats  # 從 bundle 攞，唔再 query
     if cats:
         import plotly.express as px
         import pandas as pd
@@ -284,7 +290,7 @@ with right:
         unsafe_allow_html=True,
     )
     import database as invdb
-    top = cached_pfr.invoices_top_n_by_amount(5)
+    top = top_invoices  # 從 bundle 攞，唔再 query
     if top:
         import pandas as pd
         df = pd.DataFrame([
@@ -311,7 +317,7 @@ st.markdown(
     f"<h3 style='color:{C['text']}'>🏦 各帳戶餘額</h3>",
     unsafe_allow_html=True,
 )
-balances = cached_pfr.all_account_balances(as_of)
+balances = all_balances_data  # 從 bundle 攞，唔再 query
 assets = [b for b in balances if b["account_type"] == "asset"]
 liabs = [b for b in balances if b["account_type"] == "liability"]
 

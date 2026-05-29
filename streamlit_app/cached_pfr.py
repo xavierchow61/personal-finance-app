@@ -113,3 +113,77 @@ def invalidate_invoices():
     all_account_balances.clear()
     income_statement.clear()
     spending_by_category.clear()
+
+
+# ============================================================
+# 🚀 並行 fetch + bundle cache（首頁專用）
+# 將 5 個 query 並行跑（ThreadPoolExecutor），由 ~25s sequential
+# 降到 ~5s。再加 cache，60s 內 reload 秒回。
+# ============================================================
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_dashboard_bundle(as_of_date, start_date, end_date):
+    """並行 fetch 首頁所有 data。Return dict with 5 keys."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def safe(fn, *args, default=None):
+        try:
+            return fn(*args)
+        except Exception as ex:
+            print(f"[bundle] {fn.__name__} failed: {ex}")
+            return default
+
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        f_nw = ex.submit(safe, pfr.net_worth, as_of_date,
+                          default={"assets": 0, "liabilities": 0,
+                                    "net_worth": 0})
+        f_pl = ex.submit(safe, pfr.income_statement,
+                          start_date, end_date,
+                          default={"total_expense": 0,
+                                    "total_income": 0,
+                                    "net": 0, "income": [],
+                                    "expense": []})
+        f_cats = ex.submit(safe, pfr.spending_by_category,
+                            start_date, end_date, default=[])
+        f_top = ex.submit(safe, invdb.top_n_by_amount, 5, default=[])
+        f_bal = ex.submit(safe, pfr.all_account_balances,
+                           as_of_date, default=[])
+
+    return {
+        "net_worth": f_nw.result(),
+        "income_statement": f_pl.result(),
+        "spending_by_category": f_cats.result(),
+        "top_invoices": f_top.result(),
+        "all_balances": f_bal.result(),
+    }
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_credit_cards_bundle():
+    """並行 fetch 信用卡 dashboard data"""
+    from concurrent.futures import ThreadPoolExecutor
+    from personal_finance import db as pfdb
+
+    def safe(fn, *args, default=None):
+        try:
+            return fn(*args)
+        except Exception:
+            return default
+
+    cards = safe(pfdb.list_credit_cards, default=[])
+    cards_with_limit = [c for c in cards
+                         if (c.get("credit_limit") or 0) > 0]
+    if not cards_with_limit:
+        return {"cards": [], "balances": {}}
+
+    # 並行攞每張卡 balance
+    with ThreadPoolExecutor(max_workers=min(8, len(cards_with_limit))) as ex:
+        futures = {
+            c["account_code"]:
+            ex.submit(safe, pfr.account_balance,
+                      c["account_code"], None, True, default=0)
+            for c in cards_with_limit
+        }
+        balances = {code: f.result() for code, f in futures.items()}
+
+    return {"cards": cards_with_limit, "balances": balances}
