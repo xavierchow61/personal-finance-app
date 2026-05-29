@@ -32,12 +32,30 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 DB_PATH = BASE_DIR / "invoices.db"   # 預設路徑（沒登入時用）
 
 
-def get_user_data_dir(user: str | None = None) -> Path:
-    """取得指定用戶嘅 data 資料夾。
+def get_user_data_dir(user=None) -> Path:
+    """取得指定用戶嘅 data 資料夾（僅 SQLite mode 用）。
 
-    若 user=None：嘗試從 Streamlit session 取目前登入用戶。
-    若仍是 None：回 BASE_DIR（向後兼容：本地 / 未登入模式）。
+    支援 user 為：
+    - str：直接用作 folder name（舊版 secrets-based auth）
+    - dict：抽 ["id"] 或 ["email"] 做 folder name（Supabase Auth）
+    - None：自動從 Streamlit session 攞
+
+    若已用 PostgreSQL（DATABASE_URL 設定咗），return BASE_DIR
+    因為 PG 用單一共用 schema，無需 per-user folder。
     """
+    # PostgreSQL 模式 → 共用 schema，唔需要 per-user folder
+    if os.getenv("DATABASE_URL"):
+        return BASE_DIR
+    try:
+        import streamlit as st
+        if not os.getenv("DATABASE_URL"):
+            db_url = st.secrets.get("DATABASE_URL", "")
+            if db_url:
+                return BASE_DIR
+    except Exception:
+        pass
+
+    # SQLite 模式
     if user is None:
         try:
             import streamlit as st
@@ -45,8 +63,19 @@ def get_user_data_dir(user: str | None = None) -> Path:
         except Exception:
             user = None
 
-    if user:
-        d = BASE_DIR / "data" / user
+    # 抽 user folder name
+    folder = None
+    if isinstance(user, dict):
+        # Supabase Auth dict format
+        folder = user.get("id") or user.get("email")
+        if folder and "@" in folder:
+            # email 用 @ 前段做 folder
+            folder = folder.split("@")[0]
+    elif isinstance(user, str):
+        folder = user
+
+    if folder:
+        d = BASE_DIR / "data" / folder
         d.mkdir(parents=True, exist_ok=True)
         return d
     return BASE_DIR
