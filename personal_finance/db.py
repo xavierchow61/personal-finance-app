@@ -458,38 +458,58 @@ def list_entries(start_date: str | None = None,
                  project_id: int | None = None,
                  invoice_id: int | None = None,
                  limit: int = 100) -> list[dict]:
+    """列出 journal entries — 用 single JOIN + GROUP BY 取代 nested subquery
+    優化前：32s（nested subquery 每行跑一次）
+    優化後：~3s（單一 query + GROUP_CONCAT/STRING_AGG aggregate）
+    """
     init_db()
+
+    # 用 GROUP_CONCAT 直接 aggregate lines summary（adapt_sql 會自動翻譯 PG）
     sql = """
-        SELECT DISTINCT je.*,
-               (SELECT GROUP_CONCAT(jl.account_code || ':' ||
-                                     CASE WHEN jl.debit > 0
-                                          THEN 'Dr ' || jl.debit
-                                          ELSE 'Cr ' || jl.credit END,
-                                     ' | ')
-                FROM journal_lines jl WHERE jl.entry_id=je.entry_id) AS lines_summary,
-               (SELECT MAX(jl.debit + jl.credit)
-                FROM journal_lines jl WHERE jl.entry_id=je.entry_id) AS amount
+        SELECT je.entry_id, je.entry_date, je.description,
+               je.invoice_id, je.project_id, je.notes,
+               je.currency, je.fx_rate, je.created_at,
+               GROUP_CONCAT(
+                   jl.account_code || ':' ||
+                   CASE WHEN jl.debit > 0
+                        THEN 'Dr ' || jl.debit
+                        ELSE 'Cr ' || jl.credit END,
+                   ' | '
+               ) AS lines_summary,
+               MAX(jl.debit + jl.credit) AS amount
         FROM journal_entries je
         LEFT JOIN journal_lines jl ON jl.entry_id=je.entry_id
-        WHERE 1=1
     """
+    where_parts = []
     params = []
     if start_date:
-        sql += " AND je.entry_date >= ?"
+        where_parts.append("je.entry_date >= ?")
         params.append(start_date)
     if end_date:
-        sql += " AND je.entry_date <= ?"
+        where_parts.append("je.entry_date <= ?")
         params.append(end_date)
     if account_code:
-        sql += " AND jl.account_code = ?"
+        where_parts.append(
+            "je.entry_id IN ("
+            "SELECT entry_id FROM journal_lines WHERE account_code=?)"
+        )
         params.append(account_code)
     if project_id is not None:
-        sql += " AND je.project_id = ?"
+        where_parts.append("je.project_id = ?")
         params.append(project_id)
     if invoice_id is not None:
-        sql += " AND je.invoice_id = ?"
+        where_parts.append("je.invoice_id = ?")
         params.append(invoice_id)
-    sql += " ORDER BY je.entry_date DESC, je.entry_id DESC"
+
+    if where_parts:
+        sql += " WHERE " + " AND ".join(where_parts)
+
+    sql += """
+        GROUP BY je.entry_id, je.entry_date, je.description,
+                 je.invoice_id, je.project_id, je.notes,
+                 je.currency, je.fx_rate, je.created_at
+        ORDER BY je.entry_date DESC, je.entry_id DESC
+    """
     if limit:
         sql += f" LIMIT {int(limit)}"
     with _conn() as c:

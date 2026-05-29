@@ -158,6 +158,98 @@ def fetch_dashboard_bundle(as_of_date, start_date, end_date):
     }
 
 
+# ============================================================
+# 個人記賬頁 bundle
+# ============================================================
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_ledger_bundle():
+    """並行 fetch 個人記賬頁所有 data"""
+    from concurrent.futures import ThreadPoolExecutor
+    from personal_finance import db as pfdb
+
+    def safe(fn, *args, **kw):
+        try:
+            return fn(*args, **kw)
+        except Exception as ex:
+            print(f"[ledger] {fn.__name__} failed: {ex}")
+            return []
+
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_entries = ex.submit(safe, pfdb.list_entries, None, None,
+                               None, None, None, 100)
+        f_accs = ex.submit(safe, pfdb.list_accounts, False)
+        f_balances = ex.submit(safe, pfr.all_account_balances, None)
+
+    return {
+        "entries": f_entries.result(),
+        "accounts": f_accs.result(),
+        "balances": f_balances.result(),
+    }
+
+
+# ============================================================
+# 預算頁 bundle
+# ============================================================
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_budget_bundle(period):
+    """並行 fetch 預算頁所有 data"""
+    from concurrent.futures import ThreadPoolExecutor
+    from personal_finance import db as pfdb
+
+    def safe(fn, *args, **kw):
+        try:
+            return fn(*args, **kw)
+        except Exception as ex:
+            print(f"[budget] {fn.__name__} failed: {ex}")
+            return []
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        f_rows = ex.submit(safe, pfr.budget_vs_actual, period)
+        f_trend = ex.submit(safe, pfr.monthly_spending, 12)
+        f_cats = ex.submit(safe, pfdb.list_accounts, True, "expense")
+        f_budgets = ex.submit(safe, pfdb.list_budgets, period)
+
+    return {
+        "rows": f_rows.result(),
+        "trend": f_trend.result(),
+        "expense_categories": f_cats.result(),
+        "existing_budgets": f_budgets.result(),
+    }
+
+
+# ============================================================
+# 報銷追蹤頁 bundle
+# ============================================================
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_reimbursement_bundle():
+    """並行 fetch 報銷追蹤頁所有 data"""
+    from concurrent.futures import ThreadPoolExecutor
+    from personal_finance import db as pfdb
+
+    def safe(fn, *args, default=None, **kw):
+        try:
+            return fn(*args, **kw)
+        except Exception:
+            return default
+
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_summary = ex.submit(safe, invdb.reimbursement_summary,
+                               default={})
+        f_company = ex.submit(safe, invdb.by_expense_type,
+                               "公司報銷", default=[])
+        f_assets = ex.submit(safe, pfdb.list_accounts, True, "asset",
+                              default=[])
+
+    return {
+        "summary": f_summary.result(),
+        "company_invoices": f_company.result(),
+        "asset_accounts": f_assets.result(),
+    }
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_credit_cards_bundle():
     """並行 fetch 信用卡 dashboard data"""

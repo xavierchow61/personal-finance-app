@@ -20,12 +20,18 @@ render_subpage_nav("ledger")
 
 from personal_finance import db as pfdb, reports as pfr
 from datetime import date
+import cached_pfr
 
 # === 選擇期間 ===
 period = st.text_input("期間（YYYY-MM）", value=date.today().strftime("%Y-%m"))
 
-# === 預算與實績對比 ===
-rows = pfr.budget_vs_actual(period)
+# === 🚀 並行 fetch 預算頁所有資料（一次過載入）===
+with st.spinner("📊 載入預算資料..."):
+    _bundle = cached_pfr.fetch_budget_bundle(period)
+rows = _bundle["rows"]
+_trend_data = _bundle["trend"]
+_expense_cats = _bundle["expense_categories"]
+_existing_budgets = _bundle["existing_budgets"]
 if not rows:
     st.info("此月份尚未設定預算或無支出紀錄。請於下方「設定預算」處設定。")
 else:
@@ -60,9 +66,9 @@ st.divider()
 
 # === 設定預算 ===
 with st.expander("➕ 設定或修改預算"):
-    cats = pfdb.list_accounts(account_type="expense")
+    cats = _expense_cats   # 用 bundle data
     existing = {b["account_code"]: b["amount"]
-                 for b in pfdb.list_budgets(period=period)}
+                 for b in _existing_budgets}
 
     with st.form("budget_form"):
         st.caption(f"設定 {period} 的預算（留空表示不設定）")
@@ -92,7 +98,7 @@ with st.expander("➕ 設定或修改預算"):
 # === 過去 12 個月走勢 ===
 st.divider()
 st.subheader("📈 過去 12 個月支出走勢")
-trend = pfr.monthly_spending(12)
+trend = _trend_data   # 用 bundle data
 if not trend:
     st.info("尚未有任何支出資料，無法繪製走勢圖。")
 elif len(trend) == 1:

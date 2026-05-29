@@ -19,6 +19,14 @@ render_subpage_nav("ledger")
 
 from personal_finance import db as pfdb, reports as pfr
 from personal_finance import excel_export as pfexp
+import cached_pfr
+
+# === 🚀 並行 fetch（一次 spinner，所有資料一齊出）===
+with st.spinner("📊 載入個人記賬資料..."):
+    _bundle = cached_pfr.fetch_ledger_bundle()
+_entries = _bundle["entries"]
+_accounts = _bundle["accounts"]
+_balances = _bundle["balances"]
 
 # === 頂部工具列：匯出 Excel ===
 exp_l, exp_c, exp_r = st.columns([3, 2, 2])
@@ -58,7 +66,7 @@ tab1, tab2, tab3 = st.tabs(["📜 交易紀錄", "🏦 帳戶總覽", "➕ 新�
 # === 交易紀錄 ===
 with tab1:
     st.caption("最新 100 筆分錄")
-    entries = pfdb.list_entries(limit=100)
+    entries = _entries   # 用 bundle data
     if entries:
         df = pd.DataFrame([
             {
@@ -112,7 +120,9 @@ with tab1:
 # === 帳戶總覽 ===
 with tab2:
     st.caption("所有帳戶及目前餘額（以港幣顯示）")
-    accs = pfdb.list_accounts(active_only=False)
+    # 用 bundle data，避免 N+1 query
+    accs = _accounts
+    bal_map = {b["code"]: b["balance"] for b in _balances}
     df = pd.DataFrame([
         {
             "代碼": a["code"],
@@ -120,7 +130,7 @@ with tab2:
             "類型": a["account_type"],
             "幣別": a.get("currency") or "HKD",
             "期初餘額": a.get("opening_balance") or 0,
-            "目前餘額（HKD）": pfr.account_balance(a["code"], in_hkd=True),
+            "目前餘額（HKD）": bal_map.get(a["code"], 0),
             "啟用中": "✅" if a["is_active"] else "❌",
         }
         for a in accs

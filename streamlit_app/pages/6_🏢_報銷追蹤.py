@@ -21,9 +21,14 @@ render_subpage_nav("ledger")
 
 import database as invdb
 from personal_finance import db as pfdb, posting as pfpost
+import cached_pfr
 
-# ============ KPI ============
-summary = invdb.reimbursement_summary()
+# ============ 🚀 並行 fetch 報銷追蹤所有資料 ============
+with st.spinner("📊 載入報銷資料..."):
+    _bundle = cached_pfr.fetch_reimbursement_bundle()
+summary = _bundle["summary"]
+all_company = _bundle["company_invoices"]
+_asset_accs = _bundle["asset_accounts"]
 
 c1, c2, c3, c4 = st.columns(4)
 kpi_card(c1, "🏢 待報銷金額",
@@ -40,8 +45,7 @@ st.write("")
 # ============ Tabs ============
 tab1, tab2 = st.tabs(["⏳ 待收款清單", "✅ 已收款歷史"])
 
-# 取得所有公司報銷單據
-all_company = invdb.by_expense_type("公司報銷")
+# 從 bundle 拆分 pending / done
 pending = [i for i in all_company if not i.get("reimbursed")]
 done = [i for i in all_company if i.get("reimbursed")]
 
@@ -90,7 +94,7 @@ with tab1:
             )
 
             # 揀收款帳戶
-            asset_accs = pfdb.list_accounts(account_type="asset")
+            asset_accs = _asset_accs   # 用 bundle data
             asset_opts = {
                 f"{a.get('icon') or ''} {a['name']} ({a['code']})": a["code"]
                 for a in asset_accs
