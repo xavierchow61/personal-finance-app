@@ -106,11 +106,14 @@ def sign_in_with_password(email: str, password: str) -> tuple[bool, str]:
                 "id": user.id,
                 "email": user.email,
             }
-            # 🔒 安全：清空所有 cache，避免見到上一個用戶嘅資料
+            # 🔒 安全：清空所有 cache + init flag，
+            # 避免見到上一個用戶嘅資料，並強制重新 init 新用戶 schema
             try:
                 st.cache_data.clear()
             except Exception:
                 pass
+            for _k in ("_dbs_initialized",):
+                st.session_state.pop(_k, None)
             return True, "登入成功"
         return False, "登入失敗"
     except Exception as ex:

@@ -364,9 +364,11 @@ def get_conn(sqlite_path: str | Path):
                     # 唔阻 connection；嚴重錯誤會喺 query 時冒出
                     print(f"[db_backend] CREATE SCHEMA failed: {ex}")
             # 每次 connect 都要 set search_path（per-session）
+            # 🔒 安全：唔包含 public — 避免 user table 唔存在時 fallback
+            # 到 public schema 讀到舊資料（其他用戶嘅）
             try:
                 cur.execute(
-                    f'SET search_path TO "{user_schema}", public')
+                    f'SET search_path TO "{user_schema}"')
                 con.commit()
             except Exception as ex:
                 con.rollback()
