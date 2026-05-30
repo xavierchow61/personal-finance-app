@@ -1492,28 +1492,64 @@ with tab2:
         if _has_sel_al:
             _sel_alias = aliases[sel.selection.rows[0]]
 
+        # 頂部按鈕區：新增 + 編輯 + 全部刪除
         with _alias_action_bar:
-            ab1, ab2, _ab_spacer = st.columns([1, 1, 4])
-            with ab1:
-                if st.button("➕ 新增對應",
-                              use_container_width=True,
-                              key="open_new_alias_dlg"):
-                    _alias_dialog("new")
-            with ab2:
-                if _sel_alias:
-                    _lbl = (
-                        f"✏️ 編輯：{_sel_alias['keyword']} → "
-                        f"{_sel_alias['account_code']}"
-                    )
-                else:
-                    _lbl = "✏️ 編輯（請先選一行）"
-                if st.button(
-                    _lbl, use_container_width=True,
-                    disabled=not _has_sel_al,
-                    key="open_edit_alias_dlg",
-                ):
+            if st.session_state.get("confirm_del_all_aliases"):
+                # 確認模式：警告 + 確定 / 取消
+                st.warning("⚠️ 確認要刪除全部對應？此動作無法復原")
+                cc1, cc2, _ccsp = st.columns([1, 1, 4])
+                if cc1.button("✅ 確定刪除", type="primary",
+                               key="do_del_all_aliases",
+                               use_container_width=True):
+                    try:
+                        n = pfdb.delete_all_payment_aliases()
+                        st.session_state[
+                            "confirm_del_all_aliases"] = False
+                        st.toast(f"🗑️ 已刪除 {n} 條對應", icon="🗑️")
+                        try:
+                            import cached_pfr
+                            cached_pfr.invalidate_all()
+                        except Exception:
+                            pass
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"刪除失敗：{ex}")
+                if cc2.button("❌ 取消",
+                               key="cancel_del_all_aliases",
+                               use_container_width=True):
+                    st.session_state["confirm_del_all_aliases"] = False
+                    st.rerun()
+            else:
+                # 一般模式：3 個按鈕並排
+                ab1, ab2, ab3, _ab_spacer = st.columns([1, 1, 1, 3])
+                with ab1:
+                    if st.button("➕ 新增對應",
+                                  use_container_width=True,
+                                  key="open_new_alias_dlg"):
+                        _alias_dialog("new")
+                with ab2:
                     if _sel_alias:
-                        _alias_dialog("edit", _sel_alias)
+                        _lbl = (
+                            f"✏️ 編輯：{_sel_alias['keyword']} → "
+                            f"{_sel_alias['account_code']}"
+                        )
+                    else:
+                        _lbl = "✏️ 編輯（請先選一行）"
+                    if st.button(
+                        _lbl, use_container_width=True,
+                        disabled=not _has_sel_al,
+                        key="open_edit_alias_dlg",
+                    ):
+                        if _sel_alias:
+                            _alias_dialog("edit", _sel_alias)
+                with ab3:
+                    if st.button("🗑️ 全部刪除",
+                                  type="secondary",
+                                  use_container_width=True,
+                                  key="ask_del_all_aliases"):
+                        st.session_state[
+                            "confirm_del_all_aliases"] = True
+                        st.rerun()
     else:
         # 表格為空時只填新增按鈕
         with _alias_action_bar:
@@ -1524,54 +1560,6 @@ with tab2:
                               key="open_new_alias_dlg_empty"):
                     _alias_dialog("new")
         st.info("尚未設定任何對應。系統會用 fallback 自動分類。")
-
-    st.divider()
-    al_c1, al_c2, al_c3 = st.columns(3)
-    with al_c1:
-        if st.button("📦 一鍵載入預設對應"):
-            stats = pfseed.seed_payment_aliases(force=False)
-            n = stats.get('inserted', stats.get('count', 0)) \
-                if isinstance(stats, dict) else 0
-            st.success(f"✅ 已載入預設對應（{n} 條）")
-            st.rerun()
-    with al_c2:
-        if st.button("🔄 重設為預設值（會刪掉自訂）",
-                     type="secondary"):
-            stats = pfseed.reset_payment_aliases_to_defaults()
-            if isinstance(stats, dict):
-                st.warning(
-                    f"⚠️ 已重設！刪 {stats.get('deleted', 0)} 條、"
-                    f"新增 {stats.get('inserted', 0)} 條"
-                )
-            else:
-                st.warning("⚠️ 已重設為預設值")
-            st.rerun()
-    with al_c3:
-        # 全部刪除（兩步確認，防誤按）
-        if not st.session_state.get("confirm_del_all_aliases"):
-            if st.button("🗑️ 全部刪除", type="secondary",
-                          key="ask_del_all_aliases"):
-                st.session_state["confirm_del_all_aliases"] = True
-                st.rerun()
-        else:
-            st.warning("⚠️ 確認要刪除全部對應？")
-            cc1, cc2 = st.columns(2)
-            if cc1.button("✅ 確定刪除",
-                          type="primary",
-                          key="do_del_all_aliases",
-                          use_container_width=True):
-                try:
-                    n = pfdb.delete_all_payment_aliases()
-                    st.session_state["confirm_del_all_aliases"] = False
-                    st.toast(f"🗑️ 已刪除 {n} 條對應", icon="🗑️")
-                    st.rerun()
-                except Exception as ex:
-                    st.error(f"刪除失敗：{ex}")
-            if cc2.button("取消",
-                          key="cancel_del_all_aliases",
-                          use_container_width=True):
-                st.session_state["confirm_del_all_aliases"] = False
-                st.rerun()
 
 # ============ Tab 3: 期間鎖定 ============
 with tab3:
