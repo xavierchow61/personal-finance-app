@@ -1223,6 +1223,116 @@ with tab2:
         )
 
     st.divider()
+
+    # === 統一 dialog（新增 + 編輯共用）===
+    @st.dialog("付款方式對應", width="large")
+    def _alias_dialog(mode: str, alias: dict | None = None):
+        is_edit = mode == "edit"
+        st.caption("✏️ 修改現有對應" if is_edit
+                   else "➕ 新增付款方式對應")
+
+        _accs = pfdb.list_accounts(account_type="asset") + \
+                pfdb.list_accounts(account_type="liability")
+        _acc_opts = {
+            f"{a.get('icon') or ''} {a['name']} ({a['code']})":
+                a["code"]
+            for a in _accs
+        }
+        _opt_list = list(_acc_opts.keys())
+
+        cur_kw = alias["keyword"] if is_edit else ""
+        cur_code = alias["account_code"] if is_edit else None
+        cur_notes = (alias.get("notes") or "") if is_edit else ""
+        cur_id = int(alias["alias_id"]) if is_edit else None
+
+        new_kw = st.text_input(
+            "關鍵字（會用 LIKE 模糊匹配）",
+            value=cur_kw,
+            placeholder="例：PayMe / HSBC / Visa",
+        )
+        cur_label = next(
+            (lbl for lbl, c in _acc_opts.items() if c == cur_code),
+            None,
+        )
+        cur_idx = (_opt_list.index(cur_label)
+                   if cur_label in _opt_list else 0)
+        new_acc_label = st.selectbox(
+            "對應到帳戶", _opt_list, index=cur_idx,
+        )
+        new_notes_val = st.text_input(
+            "備註（選填）", value=cur_notes,
+        )
+
+        st.divider()
+        if is_edit:
+            bc1, bc2 = st.columns(2)
+            save_btn = bc1.button(
+                "💾 儲存修改", type="primary",
+                use_container_width=True, key="alias_dlg_save",
+            )
+            del_btn = bc2.button(
+                "🗑️ 刪除", type="secondary",
+                use_container_width=True, key="alias_dlg_del",
+            )
+        else:
+            save_btn = st.button(
+                "✨ 新增對應", type="primary",
+                use_container_width=True, key="alias_dlg_create",
+            )
+            del_btn = False
+
+        if save_btn:
+            new_kw_s = new_kw.strip()
+            if not new_kw_s:
+                st.error("關鍵字不能為空")
+                return
+            try:
+                # 編輯時如關鍵字有改 → 先刪舊嘅
+                if is_edit and new_kw_s.lower() != cur_kw.lower():
+                    pfdb.delete_payment_alias(cur_id)
+                pfdb.add_payment_alias(
+                    new_kw_s,
+                    _acc_opts[new_acc_label],
+                    new_notes_val or None,
+                )
+                if is_edit:
+                    st.toast(
+                        f"✅ 已更新：{new_kw_s} → "
+                        f"{_acc_opts[new_acc_label]}",
+                        icon="✅",
+                    )
+                else:
+                    st.toast(
+                        f"✨ 新增：{new_kw_s} → "
+                        f"{_acc_opts[new_acc_label]}",
+                        icon="🎉",
+                    )
+                try:
+                    import cached_pfr
+                    cached_pfr.invalidate_all()
+                except Exception:
+                    pass
+                st.rerun()
+            except Exception as ex:
+                st.error(f"{'更新' if is_edit else '新增'}失敗：{ex}")
+
+        if del_btn:
+            try:
+                pfdb.delete_payment_alias(cur_id)
+                st.toast(f"🗑️ 已刪除 #{cur_id}", icon="🗑️")
+                try:
+                    import cached_pfr
+                    cached_pfr.invalidate_all()
+                except Exception:
+                    pass
+                st.rerun()
+            except Exception as ex:
+                st.error(str(ex))
+
+    # === 按鈕區（placeholder：先佔位，render 表後填埋）===
+    _alias_action_bar = st.container()
+    st.divider()
+
     aliases = pfdb.list_payment_aliases()
     if aliases:
         df_al = pd.DataFrame([
@@ -1239,93 +1349,43 @@ with tab2:
                             on_select="rerun",
                             selection_mode="single-row")
 
-        # === 編輯選定對應（含預設值都可改）===
-        if sel.selection.rows:
-            sel_row = df_al.iloc[sel.selection.rows[0]]
-            sel_id = int(sel_row["ID"])
-            sel_kw = sel_row["關鍵字（部份匹配）"]
-            sel_acc_code = sel_row["對應帳戶"]
-            sel_notes_val = sel_row["備註"]
+        # 填埋頂部按鈕區（新增 + 編輯同一行）
+        _has_sel_al = bool(sel.selection.rows)
+        _sel_alias = None
+        if _has_sel_al:
+            _sel_alias = aliases[sel.selection.rows[0]]
 
-            st.divider()
-            with st.expander(
-                f"✏️ 編輯對應 #{sel_id}：{sel_kw} → {sel_acc_code}",
-                expanded=True,
-            ):
-                _accs_edit = pfdb.list_accounts(
-                    account_type="asset") + \
-                    pfdb.list_accounts(account_type="liability")
-                _acc_opts_edit = {
-                    f"{a['code']} - {a['name']}": a["code"]
-                    for a in _accs_edit
-                }
-                _opt_list = list(_acc_opts_edit.keys())
-                # 揾返現時 account 嘅 label
-                cur_label = next(
-                    (lbl for lbl, c in _acc_opts_edit.items()
-                     if c == sel_acc_code),
-                    None,
-                )
-
-                with st.form(f"edit_alias_{sel_id}"):
-                    new_kw = st.text_input(
-                        "關鍵字（會用 LIKE 模糊匹配）",
-                        value=sel_kw,
+        with _alias_action_bar:
+            ab1, ab2, _ab_spacer = st.columns([1, 1, 4])
+            with ab1:
+                if st.button("➕ 新增對應",
+                              use_container_width=True,
+                              key="open_new_alias_dlg"):
+                    _alias_dialog("new")
+            with ab2:
+                if _sel_alias:
+                    _lbl = (
+                        f"✏️ 編輯：{_sel_alias['keyword']} → "
+                        f"{_sel_alias['account_code']}"
                     )
-                    new_acc_label = st.selectbox(
-                        "對應到帳戶",
-                        _opt_list,
-                        index=(_opt_list.index(cur_label)
-                                if cur_label in _opt_list else 0),
-                    )
-                    new_notes = st.text_input(
-                        "備註（選填）", value=sel_notes_val or "",
-                    )
-
-                    eb1, eb2 = st.columns(2)
-                    save_clicked = eb1.form_submit_button(
-                        "💾 儲存修改", type="primary",
-                        use_container_width=True,
-                    )
-                    del_clicked = eb2.form_submit_button(
-                        "🗑️ 刪除", type="secondary",
-                        use_container_width=True,
-                    )
-
-                    if save_clicked:
-                        new_kw_s = new_kw.strip()
-                        if not new_kw_s:
-                            st.error("關鍵字不能為空")
-                        else:
-                            try:
-                                # 如關鍵字有改 → 先刪舊嘅
-                                # （因 add_payment_alias 用 lower
-                                # 比較，會 conflict）
-                                if (new_kw_s.lower() !=
-                                        sel_kw.lower()):
-                                    pfdb.delete_payment_alias(sel_id)
-                                # 寫入（會 ON CONFLICT update）
-                                pfdb.add_payment_alias(
-                                    new_kw_s,
-                                    _acc_opts_edit[new_acc_label],
-                                    new_notes or None,
-                                )
-                                st.success(
-                                    f"✅ 已更新：{new_kw_s} → "
-                                    f"{_acc_opts_edit[new_acc_label]}"
-                                )
-                                st.rerun()
-                            except Exception as ex:
-                                st.error(f"更新失敗：{ex}")
-
-                    if del_clicked:
-                        try:
-                            pfdb.delete_payment_alias(sel_id)
-                            st.success(f"已刪除 #{sel_id}")
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(str(ex))
+                else:
+                    _lbl = "✏️ 編輯（先揀一行）"
+                if st.button(
+                    _lbl, use_container_width=True,
+                    disabled=not _has_sel_al,
+                    key="open_edit_alias_dlg",
+                ):
+                    if _sel_alias:
+                        _alias_dialog("edit", _sel_alias)
     else:
+        # 表為空時只填新增按鈕
+        with _alias_action_bar:
+            ab1, _ab_spacer = st.columns([1, 5])
+            with ab1:
+                if st.button("➕ 新增對應",
+                              use_container_width=True,
+                              key="open_new_alias_dlg_empty"):
+                    _alias_dialog("new")
         st.info("尚未設定任何對應。系統會用 fallback 自動分類。")
 
     st.divider()
@@ -1375,29 +1435,6 @@ with tab2:
                           use_container_width=True):
                 st.session_state["confirm_del_all_aliases"] = False
                 st.rerun()
-
-    with st.expander("➕ 新增對應"):
-        with st.form("alias_form"):
-            accs = pfdb.list_accounts(account_type="asset") + \
-                   pfdb.list_accounts(account_type="liability")
-            acc_opts = {f"{a['code']} - {a['name']}": a["code"]
-                        for a in accs}
-            kw = st.text_input("關鍵字（會用 LIKE 模糊匹配）",
-                                placeholder="例：PayMe / HSBC / Visa")
-            acc_label = st.selectbox("對應到帳戶",
-                                      list(acc_opts.keys()))
-            al_notes = st.text_input("備註（選填）", "")
-            if st.form_submit_button("💾 新增對應", type="primary"):
-                if kw.strip():
-                    try:
-                        pfdb.add_payment_alias(
-                            kw.strip(), acc_opts[acc_label],
-                            al_notes or None)
-                        st.success(
-                            f"✅ {kw} → {acc_opts[acc_label]}")
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(str(ex))
 
 # ============ Tab 3: 期間鎖定 ============
 with tab3:
