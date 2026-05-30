@@ -1,12 +1,12 @@
 """Cached wrappers around personal_finance.reports / database calls.
 
 每個 wrapper 用 st.cache_data 加 60 秒 TTL：
-- 首次 call：跑 PG query（3-5s）
-- 60 秒內再 call：直接從 memory 攞，<10ms
+- 首次呼叫：執行 PG query（3-5s）
+- 60 秒內再呼叫：直接從 memory 取得，<10ms
 - TTL 過後或數據變動：重新 query
 
-寫入操作（add/edit/delete）後請 call invalidate_all()
-清 cache，確保即時見到最新數據。
+寫入操作（add/edit/delete）後請呼叫 invalidate_all()
+清 cache，確保即時看到最新數據。
 """
 from __future__ import annotations
 import streamlit as st
@@ -84,7 +84,7 @@ def invoices_by_expense_type(expense_type):
     return invdb.by_expense_type(expense_type)
 
 
-# === Period dates (cheap but cache anyway 因為頻繁 call）===
+# === Period dates (cheap but cache anyway 因為頻繁呼叫）===
 
 @st.cache_data(ttl=60, show_spinner=False)
 def period_dates(period_type):
@@ -97,7 +97,7 @@ def period_dates(period_type):
 
 def invalidate_all():
     """清空所有 cached PG 數據。
-    寫入操作（add invoice / edit / delete）後 call。
+    寫入操作（add invoice / edit / delete）後呼叫。
     """
     st.cache_data.clear()
 
@@ -108,7 +108,7 @@ def invalidate_invoices():
     invoices_top_n_by_amount.clear()
     invoices_reimbursement_summary.clear()
     invoices_by_expense_type.clear()
-    # 但分錄變動會影響餘額，仍然清埋
+    # 但分錄變動會影響餘額，仍然一併清除
     net_worth.clear()
     all_account_balances.clear()
     income_statement.clear()
@@ -117,7 +117,7 @@ def invalidate_invoices():
 
 # ============================================================
 # 🚀 並行 fetch + bundle cache（首頁專用）
-# 將 5 個 query 並行跑（ThreadPoolExecutor），由 ~25s sequential
+# 將 5 個 query 並行執行（ThreadPoolExecutor），由 ~25s sequential
 # 降到 ~5s。再加 cache，60s 內 reload 秒回。
 # ============================================================
 
@@ -268,7 +268,7 @@ def fetch_credit_cards_bundle():
     if not cards_with_limit:
         return {"cards": [], "balances": {}}
 
-    # 並行攞每張卡 balance
+    # 並行取得每張卡 balance
     with ThreadPoolExecutor(max_workers=min(8, len(cards_with_limit))) as ex:
         futures = {
             c["account_code"]:

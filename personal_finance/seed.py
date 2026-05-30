@@ -1,12 +1,12 @@
 """Seed default accounts (14 expense categories + 常用 HK 個人 accounts)。
 
-第一次跑會 setup 全部 default。已 exist 嘅 account 唔會被 overwrite。
+第一次執行會 setup 全部 default。已存在的 account 不會被 overwrite。
 """
 from . import db
 from config import CATEGORIES
 
 
-# === 14 Expense Categories（同 Extract Invoice 嘅 CATEGORIES 一致）===
+# === 14 Expense Categories（和 Extract Invoice 的 CATEGORIES 一致）===
 # Category 中文名 → (code, icon, sort)
 EXPENSE_CATEGORIES = {
     "餐飲":     ("FOOD",          "🍱", 10),
@@ -85,18 +85,18 @@ PAYMENT_METHOD_MAP = {
 
 
 # === Default account fallback（用戶可改）===
-# 由 .env 個 DEFAULT_PAYMENT_ACCOUNT 或者 personal_finance 嘅 settings 揀
+# 由 .env 的 DEFAULT_PAYMENT_ACCOUNT 或者 personal_finance 的 settings 選取
 import os as _os
 DEFAULT_FALLBACK_ACCOUNT = _os.getenv("DEFAULT_PAYMENT_ACCOUNT", "CASH")
 
 
 def guess_account_from_payment(payment_method: str | None,
                                   fallback: str | None = None) -> str:
-    """估 invoice 嘅 payment_method 對應邊個 account code。
+    """推測 invoice 的 payment_method 對應哪個 account code。
 
     Args:
-        payment_method: extractor 攞嘅 payment_method 字串
-        fallback: 如果估唔到，用呢個。None = 用 DEFAULT_FALLBACK_ACCOUNT
+        payment_method: extractor 取得的 payment_method 字串
+        fallback: 如果推測不到，用此值。None = 用 DEFAULT_FALLBACK_ACCOUNT
     """
     if payment_method:
         s = payment_method.lower().strip()
@@ -111,14 +111,14 @@ def guess_account_from_payment(payment_method: str | None,
 
 
 def category_to_account_code(category_chinese: str) -> str:
-    """Extract Invoice 嘅 category 中文 → expense account code"""
+    """Extract Invoice 的 category 中文 → expense account code"""
     return CATEGORY_TO_CODE.get(category_chinese, "OTHER")
 
 
 def seed_payment_aliases(force: bool = False) -> dict:
-    """將 PAYMENT_METHOD_MAP 內置 alias 寫入 DB（變可編輯 row）。
+    """將 PAYMENT_METHOD_MAP 內置 alias 寫入 DB（變為可編輯 row）。
 
-    force=True 會覆寫（即係 reset 返做 default）。
+    force=True 會覆寫（即 reset 回 default）。
     """
     db.init_db()
     existing = {a["keyword"] for a in db.list_payment_aliases()}
@@ -137,7 +137,7 @@ def seed_payment_aliases(force: bool = False) -> dict:
 
 
 def reset_payment_aliases_to_defaults() -> dict:
-    """完全 reset：刪曬現有 + 重 seed default"""
+    """完全 reset：刪除全部現有 + 重新 seed default"""
     db.init_db()
     from .db import _conn
     with _conn() as c:

@@ -122,7 +122,7 @@ def inject_glass_style():
     }}
 
     /* 隱藏 Streamlit 預設「Running...」紅色 indicator
-       因為我哋有自己嘅 spinner，避免雙重視覺干擾 */
+       因為我們有自己的 spinner，避免雙重視覺干擾 */
     [data-testid="stStatusWidget"] {{
         display: none !important;
     }}
@@ -161,13 +161,13 @@ def inject_glass_style():
         top: 0 !important;
         height: 100vh !important;
     }}
-    /* 桌面版：隱藏側欄收合按鈕（避免唔小心收起）*/
+    /* 桌面版：隱藏側欄收合按鈕（避免不小心收起）*/
     [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
     [data-testid="stSidebarCollapsedControl"] {{ display: none !important; }}
 
     /* ============ 📱 手機版（≤768px）特殊處理 ============ */
     @media (max-width: 768px) {{
-        /* 顯示返收合按鈕，手機用家需要可以關側欄 */
+        /* 顯示回收合按鈕，手機用戶需要可以關閉側欄 */
         [data-testid="stSidebarCollapseButton"] {{
             display: block !important;
             position: fixed !important;
@@ -207,14 +207,14 @@ def inject_glass_style():
             transition: transform 0.3s ease !important;
         }}
 
-        /* 主內容區唔被 sidebar 擠走 */
+        /* 主內容區不會被 sidebar 擠走 */
         .main .block-container {{
             padding-left: 1rem !important;
             padding-right: 1rem !important;
             padding-top: 3rem !important;
         }}
 
-        /* 子頁面按鈕 row 縮細啲 */
+        /* 子頁面按鈕 row 縮小一些 */
         .main [data-testid="stPageLink"] a {{
             padding: 0.6rem 1rem !important;
             font-size: 0.9rem !important;
@@ -238,8 +238,8 @@ def inject_glass_style():
         align-items: center !important;
         line-height: 1.2 !important;
     }}
-    /* Streamlit 對「目前頁面」嘅 page_link 預設會加 background tint，
-       而家覆寫令其只係加邊框光暈，唔改 height */
+    /* Streamlit 對「目前頁面」的 page_link 預設會加 background tint，
+       現在覆寫令其只是加邊框光暈，不改 height */
     [data-testid="stSidebar"] a[aria-current="page"],
     [data-testid="stSidebar"] a.active,
     [data-testid="stSidebar"] [data-testid="stPageLink"][aria-current="page"] a {{
@@ -273,7 +273,7 @@ def inject_glass_style():
     }}
 
     /* === 登出連結（純 HTML <a>） — 白底深字 === */
-    /* 用 href="?logout=1" 識別，比 [data-testid="stSidebar"] * 更高 specificity */
+    /* 用 href="?logout=1" 識別，比 [data-testid="stSidebar"] * 有更高 specificity */
     [data-testid="stSidebar"] a[href*="logout=1"],
     [data-testid="stSidebar"] a[href*="logout=1"] * {{
         color: {PALETTE['text']} !important;
@@ -289,7 +289,7 @@ def inject_glass_style():
         transform: translateY(-1px);
         box-shadow: 0 4px 14px rgba(0,0,0,0.25) !important;
     }}
-    /* 避免被通用 [data-testid="stSidebar"] a 嘅 glass button style 覆蓋 */
+    /* 避免被通用 [data-testid="stSidebar"] a 的 glass button style 覆蓋 */
     [data-testid="stSidebar"] a[href*="logout=1"] {{
         padding: 10px 16px !important;
         margin-top: 8px !important;

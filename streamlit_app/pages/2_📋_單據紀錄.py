@@ -213,7 +213,7 @@ if filtered:
                 from personal_finance import db as _pfdb
 
                 def _has_chinese(s: str) -> bool:
-                    """檢查字串有冇中文字元（CJK Unified Ideographs）"""
+                    """檢查字串是否含中文字元（CJK Unified Ideographs）"""
                     return any('一' <= c <= '鿿' for c in s)
 
                 alias_keywords = {
@@ -226,7 +226,7 @@ if filtered:
                 }
                 all_options = alias_keywords | past_methods
                 # 過濾：只留含中文字的選項；純英文（PayMe / Visa 等）
-                # 不顯示，需要時用「✏️ 自訂輸入...」打字
+                # 不顯示，需要時用「✏️ 自訂輸入...」自行輸入
                 payment_options = sorted(
                     opt for opt in all_options if _has_chinese(opt)
                 )
@@ -265,15 +265,15 @@ if filtered:
                                      value=bool(inv.get("reimbursed")))
             notes = st.text_area("備註", inv.get("notes") or "")
 
-            # === AR Receive Dialog（勾「已收款」且係公司報銷時顯示）===
+            # === AR Receive Dialog（勾「已收款」且為公司報銷時顯示）===
             ar_acc_code = None
             ar_date_iso = None
             was_reimbursed = bool(inv.get("reimbursed"))
             if (exp_type == "公司報銷" and reimb and not was_reimbursed):
                 st.info(
-                    "💰 偵測到你勾選「已收款」"
+                    "💰 偵測到您勾選「已收款」"
                     "— 請選擇收款入哪個帳戶，"
-                    "系統會自動入收款分錄。"
+                    "系統會自動建立收款分錄。"
                 )
                 from personal_finance import db as pfdb
                 from datetime import date as _d
@@ -329,13 +329,13 @@ if filtered:
                         if exp_type == "公司報銷":
                             posting_msg = (
                                 f" · 🏢 已自動入 AR_REIMBURSE "
-                                f"（刪 {n_removed} 條舊分錄、"
+                                f"（刪除 {n_removed} 條舊分錄、"
                                 f"新分錄 #{new_entry_id}）"
                             )
                         else:
                             posting_msg = (
                                 f" · 💰 已重新入賬"
-                                f"（刪 {n_removed} 條舊分錄、"
+                                f"（刪除 {n_removed} 條舊分錄、"
                                 f"新分錄 #{new_entry_id}）"
                             )
                     except Exception as ex:

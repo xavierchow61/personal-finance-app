@@ -80,10 +80,10 @@ SUBPAGE_GROUPS = {
 
 
 def render_subpage_nav(group_key: str):
-    """渲染頁面頂部嘅子頁面導航（一排按鈕）
+    """渲染頁面頂部的子頁面導航（一排按鈕）
 
     Args:
-        group_key: SUBPAGE_GROUPS 嘅 key（"invoice" / "ledger"）
+        group_key: SUBPAGE_GROUPS 的 key（"invoice" / "ledger"）
     """
     group = SUBPAGE_GROUPS.get(group_key, [])
     if not group:
@@ -378,7 +378,7 @@ def kpi_card(col, label: str, value, color: str = None, emoji: str = "",
 def init_dbs():
     """確保資料庫已建立及完成初始化
 
-    用 session_state cache — 只首次 page load 跑，
+    用 session_state cache — 只首次 page load 執行，
     之後 reload 自動跳過（避免每次 3 秒 Supabase round trip）
     """
     if st.session_state.get("_dbs_initialized"):
@@ -391,7 +391,7 @@ def init_dbs():
             existing = pfdb.list_accounts(active_only=False)
             if len(existing) < 10:
                 with st.spinner(
-                    "🌱 建立預設帳戶與付款方式（首次需 1-2 分鐘）..."
+                    "🌱 建立預設帳戶與付款方式（首次需要 1-2 分鐘）..."
                 ):
                     pfseed.seed_all()
         st.session_state["_dbs_initialized"] = True

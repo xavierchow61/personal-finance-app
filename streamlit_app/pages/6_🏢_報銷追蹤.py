@@ -80,7 +80,7 @@ with tab1:
             on_select="rerun", selection_mode="single-row",
         )
 
-        # === 收款表單（如有揀單據）===
+        # === 收款表單（如有選取單據）===
         if selected.selection.rows:
             idx = selected.selection.rows[0]
             sel_id = int(df.iloc[idx]["ID"])
@@ -93,8 +93,8 @@ with tab1:
                 f"${sel_inv.get('total_amount', 0):,.2f}）"
             )
 
-            # 揀收款帳戶
-            asset_accs = _asset_accs   # 用 bundle data
+            # 選擇收款帳戶
+            asset_accs = _asset_accs   # 用 bundle 資料
             asset_opts = {
                 f"{a.get('icon') or ''} {a['name']} ({a['code']})": a["code"]
                 for a in asset_accs

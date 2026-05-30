@@ -270,7 +270,7 @@ else:
 # ============ 新增貸款 ============
 st.divider()
 with st.expander("➕ 新增貸款", expanded=not bool(loans)):
-    # 注意：唔用 st.form，等試算可即時更新
+    # 注意：不用 st.form，讓試算可即時更新
     n1, n2 = st.columns(2)
     with n1:
         nl_name = st.text_input(

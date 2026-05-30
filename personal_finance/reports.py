@@ -7,7 +7,7 @@ from . import db
 
 
 def current_period_month() -> str:
-    """'YYYY-MM' 嘅當月 string"""
+    """'YYYY-MM' 的當月 string"""
     return date.today().strftime("%Y-%m")
 
 
@@ -21,7 +21,7 @@ def current_period_year() -> str:
 def account_balance(account_code: str,
                      as_of_date: str | None = None,
                      in_hkd: bool = True) -> float:
-    """攞某個 account 嘅 balance（截至某日）。
+    """取得某個 account 的 balance（截至某日）。
 
     Args:
         in_hkd: True = 用 HKD equivalent（multi-currency entries 自動 convert）
@@ -33,7 +33,7 @@ def account_balance(account_code: str,
     opening = float(acc.get("opening_balance") or 0)
 
     if in_hkd:
-        # 用 fx_rate convert，每行乘 entry 嘅 fx_rate
+        # 用 fx_rate convert，每行乘 entry 的 fx_rate
         sql = """
             SELECT COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0) AS total_dr,
                    COALESCE(SUM(jl.credit * COALESCE(je.fx_rate, 1)), 0) AS total_cr
@@ -67,14 +67,14 @@ def account_balance(account_code: str,
 
 
 def all_account_balances(as_of_date: str | None = None) -> list[dict]:
-    """每個 account 嘅 balance + type — 優化版單一 SQL query。
+    """每個 account 的 balance + type — 優化版單一 SQL query。
 
-    舊版對每個 account 跑一條 query（N × round trip），
+    舊版對每個 account 執行一條 query（N × round trip），
     雲端 PG 上會慢到 3 分鐘。
-    新版用 LEFT JOIN 一次過攞晒所有 account 嘅 balance。
+    新版用 LEFT JOIN 一次過取得所有 account 的 balance。
     """
-    # 日期 filter 放喺 ON clause 而非 WHERE，
-    # 確保無 entries 嘅 account 仍會出現（balance = opening）
+    # 日期 filter 放在 ON clause 而非 WHERE，
+    # 確保無 entries 的 account 仍會出現（balance = opening）
     date_join = ""
     params = []
     if as_of_date:
@@ -142,14 +142,14 @@ def net_worth(as_of_date: str | None = None) -> dict:
 # ============================================================
 def spending_by_category(start_date: str, end_date: str,
                           period: str | None = None) -> list[dict]:
-    """指定日期範圍嘅 expense by category。
+    """指定日期範圍的 expense by category。
 
     Args:
         start_date / end_date: YYYY-MM-DD
-        period: 用嚟揾 budget（'YYYY-MM' 格式）。如果係月度先有意義
+        period: 用於查找 budget（'YYYY-MM' 格式）。只在月度才有意義
     """
-    # 注意：PG 嚴格，HAVING 內唔可以用 alias `amount`，要用完整 expression
-    # 同時 GROUP BY 要包埋 SELECT 內所有非 aggregate 嘅欄位
+    # 注意：PG 嚴格，HAVING 內不可以用 alias `amount`，要用完整 expression
+    # 同時 GROUP BY 要包含 SELECT 內所有非 aggregate 的欄位
     sql = """
         SELECT jl.account_code,
                a.name, a.icon, a.color,
@@ -168,7 +168,7 @@ def spending_by_category(start_date: str, end_date: str,
     with _conn() as c:
         rows = c.execute(sql, (start_date, end_date)).fetchall()
 
-    # 揾 budget（只係月度有 budget）
+    # 查找 budget（只有月度才有 budget）
     budgets = {}
     if period:
         budgets = {b["account_code"]: float(b["amount"])
@@ -192,7 +192,7 @@ def spending_by_category(start_date: str, end_date: str,
 
 
 def category_spending(period: str | None = None) -> list[dict]:
-    """某個月份各 expense category 嘅總支出（backward compat wrapper）。
+    """某個月份各 expense category 的總支出（backward compat wrapper）。
 
     period 格式：'YYYY-MM' (default = 當月)
     """
@@ -211,9 +211,9 @@ def category_spending(period: str | None = None) -> list[dict]:
 
 
 def budget_vs_actual(period: str | None = None) -> list[dict]:
-    """所有有 budget 嘅 category，顯示 budget vs actual。
+    """所有有 budget 的 category，顯示 budget vs actual。
 
-    包括有 budget 但今月未花嘅，同冇 budget 但有花嘅。
+    包括有 budget 但本月未花的，以及無 budget 但有花的。
     """
     if not period:
         period = current_period_month()
@@ -222,11 +222,11 @@ def budget_vs_actual(period: str | None = None) -> list[dict]:
     budget_list = db.list_budgets(period=period)
     out_by_code = {}
 
-    # 先加 actual（包括無 budget 嘅）
+    # 先加 actual（包括無 budget 的）
     for code, row in actual_map.items():
         out_by_code[code] = row
 
-    # 再加 budget（包括有 budget 但 actual=0）
+    # 再加 budget（包括有 budget 但 actual=0 的）
     for b in budget_list:
         code = b["account_code"]
         if code not in out_by_code:
@@ -246,7 +246,7 @@ def budget_vs_actual(period: str | None = None) -> list[dict]:
             out_by_code[code]["pct_used"] = (
                 amt / float(b["amount"]) * 100 if b["amount"] else None)
 
-    # Sort: 超支嗰啲先，然後接近 budget 嘅
+    # Sort: 超支的優先，然後接近 budget 的
     def sort_key(x):
         if x.get("pct_used") is None:
             return (0, -x["amount"])  # 無 budget，按支出
@@ -302,7 +302,7 @@ def category_monthly_trend(category_code: str,
 # Project Tracking
 # ============================================================
 def project_spending(project_id: int) -> dict:
-    """某個 project 嘅總支出 + budget vs actual"""
+    """某個 project 的總支出 + budget vs actual"""
     proj = db.get_project(project_id)
     if not proj:
         return {}
@@ -355,7 +355,7 @@ def forecast_next_month() -> dict:
 # Period 計算 helpers
 # ============================================================
 def period_dates(period_type: str) -> tuple[str, str]:
-    """攞 period type 對應嘅 start/end date.
+    """取得 period type 對應的 start/end date.
 
     period_type:
         'this_month' / 'last_month' / 'this_year' / 'last_year' / 'ytd' / 'all'
@@ -399,7 +399,7 @@ def period_label(period_type: str) -> str:
 # Income Statement (P&L)
 # ============================================================
 def income_statement(start_date: str, end_date: str) -> dict:
-    """收支表 - 計指定 period 嘅 income 同 expense.
+    """收支表 - 計算指定 period 的 income 與 expense.
 
     Returns:
         {
@@ -415,9 +415,9 @@ def income_statement(start_date: str, end_date: str) -> dict:
     init_db = db.init_db
     init_db()
 
-    # ⚠️ 必須用 INNER JOIN — 之前用 LEFT JOIN 加 date filter 喺 ON clause
-    # 會錯誤包含舊期 entries（因為 jl 行被保留即使 je date 唔 match）
-    # PG 嚴格：HAVING 用 expression、GROUP BY 包埋所有 SELECT 非 aggregate
+    # ⚠️ 必須用 INNER JOIN — 之前用 LEFT JOIN 加 date filter 在 ON clause
+    # 會錯誤包含舊期 entries（因為 jl 行被保留即使 je date 不 match）
+    # PG 嚴格：HAVING 用 expression、GROUP BY 包含所有 SELECT 非 aggregate
     sql = """
         SELECT a.code, a.name, a.account_type, a.icon,
                COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0) AS total_dr,

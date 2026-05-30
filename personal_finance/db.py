@@ -19,8 +19,8 @@ DB_PATH = BASE_DIR / "personal_finance.db"
 
 # === Account 類型 ===
 ACCOUNT_TYPES = {
-    "asset": "資產 (現金/銀行)",       # +ve balance = 你有錢
-    "liability": "負債 (信用卡)",        # +ve balance = 你欠錢
+    "asset": "資產 (現金/銀行)",       # +ve balance = 您有錢
+    "liability": "負債 (信用卡)",        # +ve balance = 您欠錢
     "expense": "開支 (消費類別)",       # +ve balance = 累計支出
     "income": "收入 (人工/紅利)",       # +ve balance = 累計收入
 }
@@ -33,7 +33,7 @@ SCHEMA = """
 -- ============ ACCOUNTS ============
 CREATE TABLE IF NOT EXISTS accounts (
     code TEXT PRIMARY KEY,                    -- "CASH" / "VISA_HSBC" / "FOOD"
-    name TEXT NOT NULL,                        -- 顯示名「現金」「HSBC Visa」「餐飲」
+    name TEXT NOT NULL,                        -- 顯示名稱「現金」「HSBC Visa」「餐飲」
     account_type TEXT NOT NULL,                -- asset / liability / expense / income
     parent_code TEXT,                          -- 父帳戶 code (NULL = 頂層)
     opening_balance REAL DEFAULT 0,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 
 -- ============ PROJECTS ============
--- 必須喺 journal_entries 之前定義（因 FK 依賴）
+-- 必須在 journal_entries 之前定義（因 FK 依賴）
 CREATE TABLE IF NOT EXISTS projects (
     project_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,                         -- 「日本旅行」「裝修廚房」
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     project_id INTEGER,                        -- optional
     notes TEXT,
     currency TEXT DEFAULT 'HKD',               -- 多幣別
-    fx_rate REAL DEFAULT 1.0,                  -- 對 HKD 嘅匯率
+    fx_rate REAL DEFAULT 1.0,                  -- 對 HKD 的匯率
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(project_id)
 );
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS budgets (
 CREATE INDEX IF NOT EXISTS idx_bud_period ON budgets(period);
 
 -- ============ CLOSED PERIODS ============
--- 鎖定嘅月份 ('YYYY-MM')，係嘅 entry 唔可以新增 / 改 / 刪
+-- 鎖定的月份 ('YYYY-MM')，該月份的 entry 不可新增 / 修改 / 刪除
 CREATE TABLE IF NOT EXISTS closed_periods (
     period TEXT PRIMARY KEY,           -- 'YYYY-MM'
     closed_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -143,9 +143,9 @@ CREATE TABLE IF NOT EXISTS fx_rates (
 
 -- ============ CREDIT CARDS ============
 -- 信用卡額外資料（額度、結算日、還款日、利率…）
--- account_code 必須對應一個 type='liability' 嘅 account
+-- account_code 必須對應一個 type='liability' 的 account
 -- 注意：rewards_rate / rewards_type 已內建（之前用 ALTER 加，
--- 但 PG 上唔可靠，索性放入 CREATE TABLE）
+-- 但 PG 上不可靠，索性放入 CREATE TABLE）
 CREATE TABLE IF NOT EXISTS credit_cards (
     card_id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_code TEXT UNIQUE NOT NULL,
@@ -191,7 +191,7 @@ CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 
 @contextmanager
 def _conn():
-    """跨 backend connection（PG = Supabase；SQLite = 本地按用戶切換）"""
+    """跨 backend connection（PG = Supabase；SQLite = 本地依用戶切換）"""
     db_path = get_personal_finance_db_path()
     with get_conn(db_path) as con:
         # PG 自動啟用 FK；SQLite 需要 PRAGMA
@@ -224,7 +224,7 @@ def _safe_add_column(con, table: str, column: str, defn: str):
             f"ALTER TABLE {table} ADD COLUMN {column} {defn}"
         )
     except Exception:
-        # 表唔存在或其他無法處理嘅錯 → 跳過
+        # 表不存在或其他無法處理的錯誤 → 跳過
         if IS_POSTGRES:
             try:
                 con.rollback()   # PG 失敗要清 transaction
@@ -238,7 +238,7 @@ _INIT_DONE = False
 def init_db(force: bool = False):
     """初始化 schema。已執行過則跳過（除非 force=True）。
 
-    對 PG 嚟講，呢個 cache 重要：避免每次 CRUD 都跑 schema 檢查。
+    對 PG 而言，此 cache 重要：避免每次 CRUD 都執行 schema 檢查。
     """
     global _INIT_DONE
     if _INIT_DONE and not force:
@@ -246,7 +246,7 @@ def init_db(force: bool = False):
     _INIT_DONE = True   # 提前 set 避免 recursive call
     with _conn() as c:
         c.executescript(SCHEMA)
-        # === 對舊 PG schema 嘅救援補丁 ===
+        # === 對舊 PG schema 的救援補丁 ===
         # 確保關鍵 column 一定存在（即使 SCHEMA 改動前已 deploy）
         _safe_add_column(c, "journal_entries",
                           "currency", "TEXT DEFAULT 'HKD'")
@@ -389,13 +389,13 @@ def upsert_account(code: str, name: str, account_type: str,
 def delete_account(code: str):
     init_db()
     with _conn() as c:
-        # 唔可以刪有 journal entry 嘅 account
+        # 不可刪除有 journal entry 的 account
         used = c.execute(
             "SELECT COUNT(*) FROM journal_lines WHERE account_code=?",
             (code,)).fetchone()[0]
         if used > 0:
             raise ValueError(f"Account {code} 有 {used} 個 journal lines，"
-                              f"唔可以刪。可以 deactivate（is_active=0）代替。")
+                              f"不可刪除。可以 deactivate（is_active=0）代替。")
         c.execute("DELETE FROM accounts WHERE code=?", (code,))
 
 
@@ -413,19 +413,19 @@ def create_entry(entry_date: str | date,
     """建一個 journal entry（會驗證 Dr = Cr）
 
     Args:
-        currency: entry 嘅原幣值 (HKD / USD / JPY ...)
-        fx_rate: 1 unit of currency = ? HKD。None = 自動由 fx_rates table 攞
+        currency: entry 的原幣值 (HKD / USD / JPY ...)
+        fx_rate: 1 unit of currency = ? HKD。None = 自動由 fx_rates table 取得
     """
     init_db()
 
-    # Validate balance（喺原幣值層面）
+    # Validate balance（在原幣值層面）
     total_dr = sum(float(l.get("debit") or 0) for l in lines)
     total_cr = sum(float(l.get("credit") or 0) for l in lines)
     if abs(total_dr - total_cr) > 0.005:
         raise ValueError(
-            f"Journal entry 唔平衡：Dr {total_dr:.2f} ≠ Cr {total_cr:.2f}")
+            f"Journal entry 不平衡：Dr {total_dr:.2f} ≠ Cr {total_cr:.2f}")
     if not lines:
-        raise ValueError("一個 entry 一定要至少 1 line")
+        raise ValueError("一個 entry 必須至少有 1 line")
 
     if isinstance(entry_date, date):
         entry_date = entry_date.isoformat()
@@ -434,11 +434,11 @@ def create_entry(entry_date: str | date,
     if is_period_closed(entry_date):
         period = entry_date[:7]
         raise ValueError(
-            f"⚠️ Period {period} 已鎖定，唔可以新增 entry。\n"
+            f"⚠️ Period {period} 已鎖定，不可新增 entry。\n"
             f"如要修改，請先去「⚙️ 設定 → 期間管理」重開該月份。"
         )
 
-    # 自動攞 fx_rate
+    # 自動取得 fx_rate
     currency = currency.upper()
     if fx_rate is None:
         fx_rate = get_fx_rate(currency, as_of_date=entry_date)
@@ -469,12 +469,12 @@ def list_entries(start_date: str | None = None,
                  invoice_id: int | None = None,
                  limit: int = 100) -> list[dict]:
     """列出 journal entries — 用 single JOIN + GROUP BY 取代 nested subquery
-    優化前：32s（nested subquery 每行跑一次）
+    優化前：32s（nested subquery 每行執行一次）
     優化後：~3s（單一 query + GROUP_CONCAT/STRING_AGG aggregate）
     """
     init_db()
 
-    # 用 GROUP_CONCAT 直接 aggregate lines summary（adapt_sql 會自動翻譯 PG）
+    # 用 GROUP_CONCAT 直接 aggregate lines summary（adapt_sql 會自動翻譯為 PG）
     sql = """
         SELECT je.entry_id, je.entry_date, je.description,
                je.invoice_id, je.project_id, je.notes,
@@ -543,13 +543,13 @@ def get_entry(entry_id: int) -> dict | None:
 def delete_entry(entry_id: int):
     init_db()
     with _conn() as c:
-        # Check 個 entry 嘅 period 有冇 closed
+        # Check 該 entry 的 period 是否已 closed
         row = c.execute("SELECT entry_date FROM journal_entries WHERE entry_id=?",
                           (entry_id,)).fetchone()
         if row and row["entry_date"] and is_period_closed(row["entry_date"]):
             raise ValueError(
-                f"⚠️ Entry #{entry_id} 喺鎖定 period ({row['entry_date'][:7]}) 入面，"
-                f"唔可以刪。")
+                f"⚠️ Entry #{entry_id} 在鎖定 period ({row['entry_date'][:7]}) 內，"
+                f"不可刪除。")
         c.execute("DELETE FROM journal_entries WHERE entry_id=?", (entry_id,))
 
 
@@ -558,7 +558,7 @@ def delete_entry(entry_id: int):
 # ============================================================
 def set_budget(account_code: str, period: str, amount: float,
                notes: str | None = None):
-    """設或者 update budget。period 例子：'2026-06' / '2026' / 'PROJECT:1'"""
+    """設定或更新 budget。period 範例：'2026-06' / '2026' / 'PROJECT:1'"""
     init_db()
     with _conn() as c:
         c.execute("""
@@ -706,7 +706,7 @@ def delete_all_payment_aliases() -> int:
 
 
 def lookup_payment_alias(payment_method: str | None) -> str | None:
-    """揾用戶自訂嘅 alias。Return account_code or None"""
+    """查找用戶自訂的 alias。Return account_code or None"""
     if not payment_method:
         return None
     s = payment_method.lower().strip()
@@ -747,7 +747,7 @@ def set_fx_rate(currency: str, rate_to_hkd: float,
 
 
 def get_fx_rate(currency: str, as_of_date: str | None = None) -> float:
-    """攞最新嘅 rate。HKD 直接 return 1。"""
+    """取得最新的 rate。HKD 直接 return 1。"""
     if currency.upper() == "HKD":
         return 1.0
     init_db()
@@ -766,7 +766,7 @@ def get_fx_rate(currency: str, as_of_date: str | None = None) -> float:
             """, (currency.upper(),)).fetchone()
         if row:
             return float(row["rate_to_hkd"])
-    # Default fallback rates（粗略，建議用戶設啱）
+    # Default fallback rates（粗略，建議用戶自行設定正確值）
     fallbacks = {"USD": 7.8, "JPY": 0.05, "CNY": 1.08, "EUR": 8.5,
                   "GBP": 9.8, "TWD": 0.24, "KRW": 0.0055, "SGD": 5.8}
     return fallbacks.get(currency.upper(), 1.0)
@@ -776,7 +776,7 @@ def get_fx_rate(currency: str, as_of_date: str | None = None) -> float:
 # CLOSED PERIODS
 # ============================================================
 def is_period_closed(entry_date: str) -> bool:
-    """Check 個日期係咪喺 closed period 入面。"""
+    """檢查該日期是否在 closed period 內。"""
     if not entry_date or len(entry_date) < 7:
         return False
     period = entry_date[:7]  # YYYY-MM
@@ -817,7 +817,7 @@ def list_closed_periods() -> list[dict]:
 def list_fx_rates() -> list[dict]:
     init_db()
     with _conn() as c:
-        # 最新嗰個 per currency
+        # 最新的 per currency
         rows = c.execute("""
             SELECT * FROM fx_rates fr1
             WHERE NOT EXISTS (
@@ -834,10 +834,10 @@ def list_fx_rates() -> list[dict]:
 # CREDIT CARDS
 # ============================================================
 def list_credit_cards() -> list[dict]:
-    """列出所有信用卡額外資料（JOIN accounts 帶埋名稱）
+    """列出所有信用卡額外資料（JOIN accounts 一併帶出名稱）
 
-    若 credit_cards 表不存在（migration 未跑）→ 自動 init + 重試
-    若仍失敗 → 回空 list（讓 UI 仍能渲染）
+    若 credit_cards 表不存在（migration 未執行）→ 自動 init + 重試
+    若仍失敗 → 回傳空 list（讓 UI 仍能渲染）
     """
     try:
         init_db()
@@ -857,7 +857,7 @@ def list_credit_cards() -> list[dict]:
 
 
 def get_credit_card(account_code: str) -> dict | None:
-    """揾某 account 嘅信用卡資料"""
+    """查找某 account 的信用卡資料"""
     init_db()
     with _conn() as c:
         row = c.execute(
@@ -904,7 +904,7 @@ def upsert_credit_card(account_code: str,
 
 
 def delete_credit_card(account_code: str):
-    """刪信用卡額外資料（唔影響原 account）"""
+    """刪除信用卡額外資料（不影響原 account）"""
     init_db()
     with _conn() as c:
         c.execute("DELETE FROM credit_cards WHERE account_code=?",
@@ -915,7 +915,7 @@ def delete_credit_card(account_code: str):
 # LOANS
 # ============================================================
 def list_loans(status: str | None = None) -> list[dict]:
-    """列出所有貸款（可按 status 篩）"""
+    """列出所有貸款（可按 status 篩選）"""
     init_db()
     sql = "SELECT * FROM loans"
     params = []

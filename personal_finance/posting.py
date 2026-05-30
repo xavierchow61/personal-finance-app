@@ -22,8 +22,8 @@ def post_invoice(invoice: dict,
 
     特殊處理：
     - 如果 invoice.expense_type == "公司報銷"
-      → Dr Expense / Cr AR_REIMBURSE（公司應收款），唔係 Cr 你個現金/卡
-      → 之後等公司還錢 call mark_reimbursement_received() 補一條 Dr Bank/Cr AR
+      → Dr Expense / Cr AR_REIMBURSE（公司應收款），而非 Cr 您的現金/卡
+      → 之後等公司還款再呼叫 mark_reimbursement_received() 補一條 Dr Bank/Cr AR
     - 其他 (私人 / 可扣稅) → 正常 Dr Expense / Cr Asset|Liability
     """
     # 1. Category
@@ -46,7 +46,7 @@ def post_invoice(invoice: dict,
 
     expense_type = (invoice.get("expense_type") or "").strip()
 
-    # 揾找數 account（兩個 case 都用同一邏輯）
+    # 找出付款 account（兩個 case 都用同一邏輯）
     if not account_code:
         pm = invoice.get("payment_method")
         account_code = db.lookup_payment_alias(pm)
@@ -57,13 +57,13 @@ def post_invoice(invoice: dict,
                 pm, fallback=fallback)
     pay_acc = db.get_account(account_code)
     if not pay_acc:
-        raise ValueError(f"Account {account_code} 唔存在")
+        raise ValueError(f"Account {account_code} 不存在")
     if pay_acc["account_type"] not in ("asset", "liability"):
         raise ValueError(
-            f"{account_code} 係 {pay_acc['account_type']}，唔可以畀數")
+            f"{account_code} 是 {pay_acc['account_type']}，不可用於付款")
 
     # === Case A: 公司報銷 ===
-    # 用自己錢/卡 pay 公司開支 → 唔係你個 expense → 入 AR
+    # 用自己的錢/卡 pay 公司開支 → 不是您的 expense → 入 AR
     # Dr AR_REIMBURSE / Cr Asset|Liability (Visa/Cash/Bank)
     if expense_type == "公司報銷":
         ar_acc = db.get_account("AR_REIMBURSE")
@@ -99,16 +99,16 @@ def post_invoice(invoice: dict,
 def mark_reimbursement_received(invoice_id: int,
                                   received_account: str = "HSBC_BANK",
                                   received_date: str | None = None) -> int:
-    """收到公司報銷款 → 補一條 Dr Bank / Cr AR 嘅 entry。
+    """收到公司報銷款 → 補一條 Dr Bank / Cr AR 的 entry。
 
     Args:
         invoice_id: 原張公司報銷單
-        received_account: 收到嘅 account (e.g. HSBC_BANK / CASH)
+        received_account: 收款的 account (e.g. HSBC_BANK / CASH)
 
     Returns:
-        新建嘅 receive entry_id
+        新建的 receive entry_id
     """
-    # 1. 揾翻原 AR entry
+    # 1. 找回原 AR entry
     entries = db.list_entries(invoice_id=invoice_id, limit=10)
     ar_entry = None
     for e in entries:
@@ -122,14 +122,14 @@ def mark_reimbursement_received(invoice_id: int,
 
     if not ar_entry:
         raise ValueError(
-            f"Invoice #{invoice_id} 揾唔到 AR_REIMBURSE entry，"
-            f"可能未 post 做公司報銷")
+            f"Invoice #{invoice_id} 找不到 AR_REIMBURSE entry，"
+            f"可能未 post 成公司報銷")
 
-    # 2. 攞 amount（AR 喺 Dr side）
+    # 2. 取得 amount（AR 在 Dr side）
     amount = 0
     for line in ar_entry["lines"]:
         if line["account_code"] == "AR_REIMBURSE":
-            # 新邏輯：AR 喺 Dr 側
+            # 新邏輯：AR 在 Dr 側
             amount = float(line["debit"] or line["credit"] or 0)
             break
 
@@ -191,7 +191,7 @@ def transfer_between_accounts(from_account: str, to_account: str,
 
 
 def unpost_invoice(invoice_id: int) -> int:
-    """刪走由某 invoice post 出嚟嘅 entry。Return 刪嘅數目"""
+    """刪除由某 invoice post 出的 entry。回傳刪除的數目"""
     entries = db.list_entries(invoice_id=invoice_id, limit=100)
     n = 0
     for e in entries:

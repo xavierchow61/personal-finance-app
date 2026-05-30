@@ -173,7 +173,7 @@ with tab0:
             1. 進入「**報銷追蹤**」頁面
             2. 上方可見 KPI：待報銷金額、已收款金額
             3. 在「**⏳ 待收款清單**」中選取單據
-            4. 揀「**收款帳戶**」（如 HSBC_BANK）
+            4. 選擇「**收款帳戶**」（如 HSBC_BANK）
             5. 按「**✅ 確認收款並入賬**」
             6. 系統自動建立沖銷分錄：
                - **Dr** HSBC_BANK
@@ -267,7 +267,7 @@ with tab_acc:
     )
 
     # 取資料（全部）
-    all_accs_raw = pfdb.list_accounts(active_only=not False)  # 暫攞晒
+    all_accs_raw = pfdb.list_accounts(active_only=not False)  # 暫取全部
     if type_filter != "（全部）":
         type_code = next(
             (k for k, v in ACCOUNT_TYPE_LABELS.items()
@@ -276,7 +276,7 @@ with tab_acc:
             all_accs_raw = [a for a in all_accs_raw
                              if a["account_type"] == type_code]
 
-    # === 父帳戶 dropdown（只列頂層、且有子嘅帳戶）===
+    # === 父帳戶 dropdown（只列頂層、且有子帳戶的帳戶）===
     children_of = {}  # parent_code -> [child_acc, ...]
     for a in all_accs_raw:
         pc = a.get("parent_code")
@@ -294,7 +294,7 @@ with tab_acc:
         "🌳 父帳戶",
         parent_opts,
         key="acc_parent_filter",
-        help="揀某父帳戶 → 只顯示佢同其子帳戶",
+        help="選擇某父帳戶 → 只顯示其本身與子帳戶",
     )
 
     show_inactive = flt_col3.checkbox(
@@ -457,14 +457,14 @@ with tab_acc:
                             "SET is_active=? WHERE code=?",
                             (1 if active_val else 0, code_final),
                         )
-                    # 用 toast（浮動通知，唔會阻擋 dialog 關閉）
+                    # 用 toast（浮動通知，不會阻擋 dialog 關閉）
                     st.toast(f"✅ 已更新 {code_final}", icon="✅")
                 else:
                     st.toast(
                         f"✅ 建立：{name_val} ({code_final})",
                         icon="🎉",
                     )
-                # 清快取，確保下次載入見到新資料
+                # 清快取，確保下次載入看到新資料
                 try:
                     import cached_pfr
                     cached_pfr.invalidate_all()
@@ -494,15 +494,15 @@ with tab_acc:
                     f"「啟用此帳戶」）。"
                 )
 
-    # === 按鈕區（placeholder：先佔位，render 表後填埋）===
+    # === 按鈕區（placeholder：先佔位，render 表格後填入）===
     _action_bar = st.container()
     st.divider()
 
-    # 應用 active filter
+    # 套用 active filter
     all_accs = (all_accs_raw if show_inactive
                  else [a for a in all_accs_raw if a.get("is_active")])
 
-    # 應用父帳戶 filter
+    # 套用父帳戶 filter
     if parent_filter != "（全部）":
         idx = parent_opts.index(parent_filter) - 1
         parent_code = parents_with_children[idx]["code"]
@@ -514,7 +514,7 @@ with tab_acc:
     if all_accs:
         # === 樹狀分組排序：parent 在前，children 緊隨其後 ===
         _all_codes = {a["code"] for a in all_accs}
-        # 頂層 = 無 parent_code OR parent_code 唔喺當前 list 入面
+        # 頂層 = 無 parent_code OR parent_code 不在當前 list 內
         top_level = [
             a for a in all_accs
             if not a.get("parent_code") or a["parent_code"] not in _all_codes
@@ -527,7 +527,7 @@ with tab_acc:
         # sort top-level by (account_type, sort_order, name)
         top_level.sort(key=lambda x: (
             x["account_type"], x.get("sort_order") or 0, x["name"]))
-        # 攤平：頂層 → 佢嘅子 → 下一個頂層
+        # 攤平：頂層 → 其子 → 下一個頂層
         ordered = []
         for top in top_level:
             ordered.append((top, 0))   # depth 0
@@ -541,9 +541,9 @@ with tab_acc:
 
         # === 批量編輯 toggle ===
         _bulk_edit = st.toggle(
-            "📝 批量編輯模式（可一次過改多個帳戶，最後撳儲存）",
+            "📝 批量編輯模式（可一次修改多個帳戶，最後按儲存）",
             key="acc_bulk_edit_toggle",
-            help="開啟後可直接喺表入面改：圖示／名稱／幣別／"
+            help="開啟後可直接在表格內修改：圖示／名稱／幣別／"
                  "期初餘額／排序／啟用",
         )
 
@@ -567,7 +567,7 @@ with tab_acc:
                 bulk_df,
                 hide_index=True,
                 use_container_width=True,
-                num_rows="fixed",   # 唔畀新增/刪除行（用 dialog 做）
+                num_rows="fixed",   # 不允許新增/刪除行（請用 dialog）
                 column_config={
                     "代碼": st.column_config.TextColumn(disabled=True),
                     "類型": st.column_config.TextColumn(disabled=True),
@@ -589,7 +589,7 @@ with tab_acc:
                 key="acc_data_editor",
             )
 
-            # 填埋頂部按鈕區：儲存 + 取消
+            # 填入頂部按鈕區：儲存 + 取消
             with _action_bar:
                 sa1, sa2, _sa_spacer = st.columns([1, 1, 4])
                 with sa1:
@@ -603,7 +603,7 @@ with tab_acc:
                             orig = bulk_df.iloc[i]
                             new = edited_df.iloc[i]
                             code = orig["代碼"]
-                            # 比較有冇 diff
+                            # 比較是否有差異
                             diff = (
                                 (orig["圖示"] or "") != (new["圖示"] or "")
                                 or orig["名稱"] != new["名稱"]
@@ -668,8 +668,8 @@ with tab_acc:
                         st.rerun()
 
             st.caption(
-                "💡 想改父帳戶 / 類型 / 備註，或刪帳戶？"
-                "請關閉批量編輯，揀行後撳「✏️ 編輯」開單筆 dialog。"
+                "💡 想修改父帳戶 / 類型 / 備註，或刪除帳戶？"
+                "請關閉批量編輯，選取行後按「✏️ 編輯」開啟單筆 dialog。"
             )
         else:
             # === 一般檢視模式 ===
@@ -700,7 +700,7 @@ with tab_acc:
                 },
             )
 
-            # === 填埋頂部按鈕區（新增 + 編輯同一行）===
+            # === 填入頂部按鈕區（新增 + 編輯同一行）===
             _has_sel = bool(sel_acc.selection.rows)
             _sel_acc_obj = None
             if _has_sel:
@@ -722,7 +722,7 @@ with tab_acc:
                             f"{_sel_acc_obj['name']}"
                         )
                     else:
-                        _btn_label = "✏️ 編輯（先揀一行）"
+                        _btn_label = "✏️ 編輯（請先選一行）"
                     if st.button(
                         _btn_label,
                         use_container_width=True,
@@ -732,7 +732,7 @@ with tab_acc:
                         if _sel_acc_obj:
                             _account_dialog("edit", _sel_acc_obj)
     else:
-        # 表為空時填埋按鈕區（只新增）
+        # 表格為空時填入按鈕區（只新增）
         with _action_bar:
             ba1, _ba_spacer = st.columns([1, 5])
             with ba1:
@@ -755,19 +755,19 @@ with tab_cc:
 
     def _next_due_date(due_day: int | None,
                         today: _d | None = None) -> _d | None:
-        """計算今日之後最近嘅還款日"""
+        """計算今日之後最近的還款日"""
         if not due_day:
             return None
         today = today or _d.today()
         try:
             target = today.replace(day=due_day)
         except ValueError:
-            # 如該月無呢一日（如 30/31）→ 用該月最後一日
+            # 如該月無此日（如 30/31）→ 用該月最後一日
             import calendar
             last = calendar.monthrange(today.year, today.month)[1]
             target = today.replace(day=min(due_day, last))
         if target <= today:
-            # 已過 → 跳下個月
+            # 已過 → 跳到下個月
             month = today.month + 1
             year = today.year
             if month > 12:
@@ -783,7 +783,7 @@ with tab_cc:
                                         day=min(due_day, last))
         return target
 
-    # 防呆：若 list_credit_cards 失敗（例如 migration 未跑），回空 list
+    # 防呆：若 list_credit_cards 失敗（例如 migration 未執行），回傳空 list
     try:
         # 強制 init_db 確保新表存在
         pfdb.init_db()
@@ -863,8 +863,8 @@ with tab_cc:
                 </div>
                 <div style="color:#6B7BA0;font-size:0.78rem;
                             margin-top:0.4rem;">
-                    💡 設定每張卡嘅回贈率（編輯信用卡），
-                    系統會自動按已記錄嘅單據計算回贈
+                    💡 設定每張卡的回贈率（編輯信用卡），
+                    系統會自動按已記錄的單據計算回贈
                 </div>
             </div>
             """,
@@ -872,7 +872,7 @@ with tab_cc:
         )
 
     if cards:
-        # 計算每張卡嘅 utilization + 距離還款日
+        # 計算每張卡的 utilization + 距離還款日
         rows_disp = []
         today = _d.today()
         for c_meta in cards:
@@ -1038,7 +1038,7 @@ with tab_cc:
                             try:
                                 pfdb.delete_credit_card(sel_code)
                                 st.success(
-                                    f"已移除 {sel_code} 嘅信用卡資料"
+                                    f"已移除 {sel_code} 的信用卡資料"
                                     f"（原 account 不變）"
                                 )
                                 st.rerun()
@@ -1052,7 +1052,7 @@ with tab_cc:
     # === 新增信用卡 ===
     st.divider()
     with st.expander("➕ 新增信用卡", expanded=not bool(cards)):
-        # 找出可用嘅 liability accounts（未有 credit_card 紀錄嘅）
+        # 找出可用的 liability accounts（未有 credit_card 紀錄的）
         liab_accs = pfdb.list_accounts(account_type="liability")
         existing_codes = {c["account_code"] for c in cards}
         available = [a for a in liab_accs
@@ -1061,7 +1061,7 @@ with tab_cc:
         if not available:
             st.warning(
                 "⚠️ 所有負債帳戶已有信用卡資料。"
-                "若要加新卡，請先去「🏦 帳戶管理」建立新嘅"
+                "若要加新卡，請先去「🏦 帳戶管理」建立新的"
                 "「負債」帳戶（如 CITI_VISA、AMEX_PLATINUM）。"
             )
         else:
@@ -1211,7 +1211,7 @@ with tab2:
     import database as _invdb
 
     def _suggest_account(keyword: str, accounts: list[dict]) -> str | None:
-        """為一個 OCR 字眼推薦最匹配嘅帳戶 code（partial match）"""
+        """為一個 OCR 字眼推薦最匹配的帳戶 code（partial match）"""
         kw_lower = keyword.lower().strip()
         if not kw_lower:
             return None
@@ -1230,7 +1230,7 @@ with tab2:
                 return a["code"]
         return None
 
-    # 找出未對應嘅 OCR 字眼
+    # 找出未對應的 OCR 字眼
     all_invoices = _invdb.list_all()
     payment_methods_seen = sorted({
         (i.get("payment_method") or "").strip()
@@ -1265,8 +1265,8 @@ with tab2:
                 <div style="color:#1A1A2E;font-size:0.92rem;
                             line-height:1.5;">
                     系統偵測到 <b>{len(unmapped)} 個</b>
-                    已出現在單據但仍未對應到帳戶嘅付款方式字眼。
-                    為佢哋指定對應帳戶，將來自動入賬會更準確。
+                    已出現在單據但仍未對應到帳戶的付款方式字眼。
+                    為其指定對應帳戶，將來自動入賬會更準確。
                 </div>
             </div>
             """,
@@ -1285,7 +1285,7 @@ with tab2:
 
         with st.form("alias_wizard"):
             st.markdown(
-                "**逐個揀對應帳戶（系統已預先建議）：**"
+                "**逐個選擇對應帳戶（系統已預先建議）：**"
             )
             wizard_picks: dict[str, str] = {}
             for kw in unmapped:
@@ -1332,7 +1332,7 @@ with tab2:
             if apply_all or apply_suggested:
                 n_saved = 0
                 for kw, sel in wizard_picks.items():
-                    # 「只儲存已建議」 → 跳過冇 suggestion 嘅
+                    # 「只儲存已建議」 → 跳過沒有 suggestion 的
                     if apply_suggested:
                         if _suggest_account(kw, _accs) is None:
                             continue
@@ -1349,12 +1349,12 @@ with tab2:
                     )
                     st.rerun()
                 else:
-                    st.warning("⚠️ 冇任何項目被儲存")
+                    st.warning("⚠️ 沒有任何項目被儲存")
     else:
         # 全部對應 OK
         st.success(
-            "🎉 所有已出現嘅付款方式都已對應到帳戶 — "
-            "唔需要精靈協助！"
+            "🎉 所有已出現的付款方式都已對應到帳戶 — "
+            "不需要精靈協助！"
         )
 
     st.divider()
@@ -1422,7 +1422,7 @@ with tab2:
                 st.error("關鍵字不能為空")
                 return
             try:
-                # 編輯時如關鍵字有改 → 先刪舊嘅
+                # 編輯時如關鍵字有改 → 先刪除舊的
                 if is_edit and new_kw_s.lower() != cur_kw.lower():
                     pfdb.delete_payment_alias(cur_id)
                 pfdb.add_payment_alias(
@@ -1464,7 +1464,7 @@ with tab2:
             except Exception as ex:
                 st.error(str(ex))
 
-    # === 按鈕區（placeholder：先佔位，render 表後填埋）===
+    # === 按鈕區（placeholder：先佔位，render 表格後填入）===
     _alias_action_bar = st.container()
     st.divider()
 
@@ -1484,7 +1484,7 @@ with tab2:
                             on_select="rerun",
                             selection_mode="single-row")
 
-        # 填埋頂部按鈕區（新增 + 編輯同一行）
+        # 填入頂部按鈕區（新增 + 編輯同一行）
         _has_sel_al = bool(sel.selection.rows)
         _sel_alias = None
         if _has_sel_al:
@@ -1504,7 +1504,7 @@ with tab2:
                         f"{_sel_alias['account_code']}"
                     )
                 else:
-                    _lbl = "✏️ 編輯（先揀一行）"
+                    _lbl = "✏️ 編輯（請先選一行）"
                 if st.button(
                     _lbl, use_container_width=True,
                     disabled=not _has_sel_al,
@@ -1513,7 +1513,7 @@ with tab2:
                     if _sel_alias:
                         _alias_dialog("edit", _sel_alias)
     else:
-        # 表為空時只填新增按鈕
+        # 表格為空時只填新增按鈕
         with _alias_action_bar:
             ab1, _ab_spacer = st.columns([1, 5])
             with ab1:
@@ -1545,7 +1545,7 @@ with tab2:
                 st.warning("⚠️ 已重設為預設值")
             st.rerun()
     with al_c3:
-        # 全部刪除（兩步確認，防誤撳）
+        # 全部刪除（兩步確認，防誤按）
         if not st.session_state.get("confirm_del_all_aliases"):
             if st.button("🗑️ 全部刪除", type="secondary",
                           key="ask_del_all_aliases"):

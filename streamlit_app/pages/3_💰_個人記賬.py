@@ -21,7 +21,7 @@ from personal_finance import db as pfdb, reports as pfr
 from personal_finance import excel_export as pfexp
 import cached_pfr
 
-# === 🚀 並行 fetch（一次 spinner，所有資料一齊出）===
+# === 🚀 並行 fetch（一次 spinner，所有資料一起載入）===
 with st.spinner("📊 載入個人記賬資料..."):
     _bundle = cached_pfr.fetch_ledger_bundle()
 _entries = _bundle["entries"]
@@ -66,7 +66,7 @@ tab1, tab2, tab3 = st.tabs(["📜 交易紀錄", "🏦 帳戶總覽", "➕ 新�
 # === 交易紀錄 ===
 with tab1:
     st.caption("最新 100 筆分錄")
-    entries = _entries   # 用 bundle data
+    entries = _entries   # 用 bundle 資料
     if entries:
         df = pd.DataFrame([
             {
@@ -120,7 +120,7 @@ with tab1:
 # === 帳戶總覽 ===
 with tab2:
     st.caption("所有帳戶及目前餘額（以港幣顯示）")
-    # 用 bundle data，避免 N+1 query
+    # 用 bundle 資料，避免 N+1 query
     accs = _accounts
     bal_map = {b["code"]: b["balance"] for b in _balances}
     df = pd.DataFrame([

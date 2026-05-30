@@ -66,7 +66,7 @@ st.divider()
 
 # === 設定預算 ===
 with st.expander("➕ 設定或修改預算"):
-    cats = _expense_cats   # 用 bundle data
+    cats = _expense_cats   # 用 bundle 資料
     existing = {b["account_code"]: b["amount"]
                  for b in _existing_budgets}
 
@@ -98,7 +98,7 @@ with st.expander("➕ 設定或修改預算"):
 # === 過去 12 個月走勢 ===
 st.divider()
 st.subheader("📈 過去 12 個月支出走勢")
-trend = _trend_data   # 用 bundle data
+trend = _trend_data   # 用 bundle 資料
 if not trend:
     st.info("尚未有任何支出資料，無法繪製走勢圖。")
 elif len(trend) == 1:
@@ -114,7 +114,7 @@ else:
     # 強制把 month 轉為字串型類別，避免 Plotly 自動補滿整年
     df_t["month"] = df_t["month"].astype(str)
     n_bars = len(df_t)
-    # 動態柱寬：少於 4 根時更窄；多於 6 根時較寬
+    # 動態柱寬：少於 4 條時較窄；多於 6 條時較寬
     bar_width = 0.35 if n_bars <= 3 else (0.55 if n_bars <= 6 else 0.7)
 
     fig = go.Figure(

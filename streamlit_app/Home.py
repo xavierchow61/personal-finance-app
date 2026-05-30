@@ -38,7 +38,7 @@ start, end = cached_pfr.period_dates(period_type)
 # === 🚀 並行 fetch 所有 dashboard data（一次過載入，由 ~25s 降至 ~5s）===
 as_of = end if period_type != "all" else None
 try:
-    with st.spinner("📊 並行載入所有資料中（首次需 5-10 秒）..."):
+    with st.spinner("📊 並行載入所有資料中（首次需要 5-10 秒）..."):
         bundle = cached_pfr.fetch_dashboard_bundle(as_of, start, end)
     nw = bundle["net_worth"]
     pl = bundle["income_statement"]
@@ -48,7 +48,7 @@ try:
 except Exception as ex:
     st.error(
         f"⚠️ 無法載入資料：{type(ex).__name__}\n\n{ex}\n\n"
-        "若係首次用，可能需要等 1-2 分鐘建立帳戶。"
+        "若是首次使用，可能需要等 1-2 分鐘建立帳戶。"
     )
     nw = {"assets": 0, "liabilities": 0, "net_worth": 0}
     pl = {"total_expense": 0, "total_income": 0, "net": 0,
@@ -72,7 +72,7 @@ try:
     from datetime import date as _d, timedelta as _td
 
     def _next_due_date(due_day, today=None):
-        """計算今日之後最近嘅還款日"""
+        """計算今日之後最近的還款日"""
         if not due_day:
             return None
         today = today or _d.today()
@@ -94,7 +94,7 @@ try:
                     year=y, month=m, day=min(due_day, last))
         return target
 
-    # 用並行 bundle，一次過攞所有卡 balance（並行）
+    # 用並行 bundle，一次過取得所有卡 balance（並行）
     cc_bundle = cached_pfr.fetch_credit_cards_bundle()
     cards_with_limit = cc_bundle["cards"]
     cc_balances = cc_bundle["balances"]
@@ -172,7 +172,7 @@ try:
         if high_util:
             lines = [
                 f"• {c['icon']} {c['name']}（****{c['last4']}）"
-                f" — 用咗 **{c['util']:.0f}%**"
+                f" — 已用 **{c['util']:.0f}%**"
                 f"（${c['balance']:,.0f} / ${c['limit']:,.0f}）"
                 for c in high_util
             ]
@@ -244,7 +244,7 @@ with left:
         f"<h3 style='color:{C['text']}'>🥧 各類別支出佔比</h3>",
         unsafe_allow_html=True,
     )
-    cats = spending_cats  # 從 bundle 攞，唔再 query
+    cats = spending_cats  # 從 bundle 取得，不再 query
     if cats:
         import plotly.express as px
         import pandas as pd
@@ -290,7 +290,7 @@ with right:
         unsafe_allow_html=True,
     )
     import database as invdb
-    top = top_invoices  # 從 bundle 攞，唔再 query
+    top = top_invoices  # 從 bundle 取得，不再 query
     if top:
         import pandas as pd
         df = pd.DataFrame([
@@ -317,7 +317,7 @@ st.markdown(
     f"<h3 style='color:{C['text']}'>🏦 各帳戶餘額</h3>",
     unsafe_allow_html=True,
 )
-balances = all_balances_data  # 從 bundle 攞，唔再 query
+balances = all_balances_data  # 從 bundle 取得，不再 query
 assets = [b for b in balances if b["account_type"] == "asset"]
 liabs = [b for b in balances if b["account_type"] == "liability"]
 

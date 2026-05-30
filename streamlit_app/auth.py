@@ -4,7 +4,7 @@
     SUPABASE_URL = "https://xxxx.supabase.co"
     SUPABASE_ANON_KEY = "eyJ..."
 
-可選 fallback：保留舊嘅 [auth.users] 做本地 demo 模式
+可選 fallback：保留舊的 [auth.users] 做本地 demo 模式
 （無 SUPABASE_URL 設定 → 自動 fallback）
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _get_supabase_client():
 
 
 def _safe_secret(name: str) -> str:
-    """從 Streamlit secrets 安全讀（無就回 ''）"""
+    """從 Streamlit secrets 安全讀（無就回傳 ''）"""
     try:
         return st.secrets.get(name, "") or ""
     except Exception:
@@ -44,7 +44,7 @@ def _safe_secret(name: str) -> str:
 
 
 def _is_enabled() -> bool:
-    """Supabase Auth 係咪可用"""
+    """Supabase Auth 是否可用"""
     return _get_supabase_client() is not None
 
 
@@ -55,6 +55,7 @@ def _is_enabled() -> bool:
 def get_current_user() -> Optional[dict]:
     """取得目前登入用戶（dict with email, id, etc.），未登入 = None"""
     return st.session_state.get("auth_user")
+
 
 
 def get_current_email() -> Optional[str]:
@@ -90,7 +91,7 @@ def logout():
 # ============================================================
 
 def sign_in_with_password(email: str, password: str) -> tuple[bool, str]:
-    """Email + password 登入。回 (success, message)"""
+    """Email + password 登入。回傳 (success, message)"""
     client = _get_supabase_client()
     if not client:
         return False, "Supabase 未設定"
@@ -152,7 +153,7 @@ def send_magic_link(email: str) -> tuple[bool, str]:
             },
         })
         return True, (
-            "✨ Magic Link 已發送！查你嘅 email，"
+            "✨ Magic Link 已發送！請查閱您的 email，"
             "點擊連結即可登入。"
         )
     except Exception as ex:
@@ -168,7 +169,7 @@ def send_password_reset(email: str) -> tuple[bool, str]:
         client.auth.reset_password_for_email(email.strip().lower())
         return True, (
             "📧 密碼重設 email 已發送！"
-            "查 email 點擊連結設定新密碼。"
+            "請查閱 email 並點擊連結設定新密碼。"
         )
     except Exception as ex:
         return False, _friendly_error(str(ex))
@@ -193,11 +194,11 @@ def _friendly_error(err: str) -> str:
 
 
 # ============================================================
-# 登入閘門（喺 app_header 自動 call）
+# 登入閘門（在 app_header 自動呼叫）
 # ============================================================
 
 def require_login():
-    """喺每個頁面開頭 call。
+    """在每個頁面開頭呼叫。
     - 若 Supabase 未設定 → 顯示警告 banner 並跳過
     - 若已登入 → 繼續
     - 若未登入 → 渲染登入畫面 + st.stop()
@@ -218,7 +219,7 @@ def _render_auth_disabled_banner():
     key_set = bool(os.getenv("SUPABASE_ANON_KEY")
                     or _safe_secret("SUPABASE_ANON_KEY"))
 
-    # 嘗試 import supabase 看是否安裝
+    # 嘗試 import supabase 看是否已安裝
     pkg_installed = False
     try:
         import supabase as _sb  # noqa
@@ -256,7 +257,7 @@ def _render_auth_disabled_banner():
 # ============================================================
 
 def _render_login_page():
-    """全屏登入畫面 — 哆啦藍漸層 + 玻璃卡 + 3 tabs"""
+    """全螢幕登入畫面 — 哆啦藍漸層 + 玻璃卡 + 3 tabs"""
     from style import inject_glass_style, PALETTE
     inject_glass_style()
 
@@ -334,13 +335,13 @@ def _render_login_page():
                 )
                 magic_clicked = col2.form_submit_button(
                     "✨ Magic Link",
-                    help="收 email 一鍵登入，唔需要密碼",
+                    help="收 email 一鍵登入，不需要密碼",
                     use_container_width=True,
                 )
 
             if login_clicked:
                 if not email or not password:
-                    st.error("⚠️ 請輸入電郵同密碼")
+                    st.error("⚠️ 請輸入電郵和密碼")
                 else:
                     ok, msg = sign_in_with_password(email, password)
                     if ok:
@@ -384,7 +385,7 @@ def _render_login_page():
 
             if su_submit:
                 if not su_email or not su_pwd:
-                    st.error("⚠️ 請填寫電郵同密碼")
+                    st.error("⚠️ 請填寫電郵和密碼")
                 elif len(su_pwd) < 6:
                     st.error("⚠️ 密碼至少 6 個字元")
                 elif su_pwd != su_pwd2:
@@ -403,7 +404,7 @@ def _render_login_page():
         with tab_reset:
             with st.form("reset_form", border=False):
                 r_email = st.text_input(
-                    "📧 註冊時用嘅電郵",
+                    "📧 註冊時使用的電郵",
                     placeholder="your@email.com",
                     key="reset_email",
                 )
@@ -428,7 +429,7 @@ def _render_login_page():
             <div style="text-align:center;color:#6B7BA0;
                         font-size:0.8rem;margin-top:1.5rem;
                         line-height:1.6;">
-                <div>💡 第一次用？揀「✨ 註冊」建立帳戶</div>
+                <div>💡 第一次使用？請選「✨ 註冊」建立帳戶</div>
                 <div style="margin-top:0.3rem;">
                     🔒 用 Supabase 安全認證 · 密碼加密儲存
                 </div>
@@ -443,7 +444,7 @@ def _render_login_page():
 # ============================================================
 
 def render_logout_section():
-    """喺側欄顯示用戶 + 登出 link"""
+    """在側欄顯示用戶 + 登出 link"""
     user = get_current_user()
     if not user:
         return
@@ -511,9 +512,9 @@ def _check_auth_callback():
     - ?type=signup&access_token=...
     - ?type=recovery&access_token=...
 
-    我哋要：
-    1. 攞到 token
-    2. set session 入 client
+    我們需要：
+    1. 取得 token
+    2. set session 進 client
     3. 清 URL params
     4. rerun 進入正常 flow
     """
@@ -550,7 +551,7 @@ def _check_auth_callback():
 
 
 def init_auth():
-    """app_header 開頭 call。
+    """在 app_header 開頭呼叫。
     處理順序：
     1. Magic Link / Email confirm callback（URL params）
     2. Logout query param

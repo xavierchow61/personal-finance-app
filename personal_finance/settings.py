@@ -1,4 +1,4 @@
-"""User settings store - 存喺 personal_finance.db settings table"""
+"""User settings store - 存於 personal_finance.db settings table"""
 from . import db
 
 
