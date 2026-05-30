@@ -259,37 +259,95 @@ with tab_acc:
     }
 
     # === 篩選 ===
-    flt_col1, flt_col2 = st.columns(2)
+    flt_col1, flt_col2, flt_col3 = st.columns(3)
     type_filter = flt_col1.selectbox(
         "篩選類型",
         ["（全部）"] + list(ACCOUNT_TYPE_LABELS.values()),
         key="acc_type_filter",
     )
-    show_inactive = flt_col2.checkbox(
-        "包含已停用的帳戶", value=False,
-        key="acc_show_inactive",
-    )
 
-    # 取資料
-    all_accs = pfdb.list_accounts(active_only=not show_inactive)
+    # 取資料（全部）
+    all_accs_raw = pfdb.list_accounts(active_only=not False)  # 暫攞晒
     if type_filter != "（全部）":
-        # 反查 type code
         type_code = next(
             (k for k, v in ACCOUNT_TYPE_LABELS.items()
              if v == type_filter), None)
         if type_code:
-            all_accs = [a for a in all_accs
-                         if a["account_type"] == type_code]
+            all_accs_raw = [a for a in all_accs_raw
+                             if a["account_type"] == type_code]
+
+    # === 父帳戶 dropdown（只列頂層、且有子嘅帳戶）===
+    children_of = {}  # parent_code -> [child_acc, ...]
+    for a in all_accs_raw:
+        pc = a.get("parent_code")
+        if pc:
+            children_of.setdefault(pc, []).append(a)
+    parents_with_children = [
+        a for a in all_accs_raw
+        if not a.get("parent_code") and a["code"] in children_of
+    ]
+    parent_opts = ["（全部）"] + [
+        f"{a.get('icon') or ''} {a['name']} ({a['code']})"
+        for a in parents_with_children
+    ]
+    parent_filter = flt_col2.selectbox(
+        "🌳 父帳戶",
+        parent_opts,
+        key="acc_parent_filter",
+        help="揀某父帳戶 → 只顯示佢同其子帳戶",
+    )
+
+    show_inactive = flt_col3.checkbox(
+        "包含已停用的帳戶", value=False,
+        key="acc_show_inactive",
+    )
+
+    # 應用 active filter
+    all_accs = (all_accs_raw if show_inactive
+                 else [a for a in all_accs_raw if a.get("is_active")])
+
+    # 應用父帳戶 filter
+    if parent_filter != "（全部）":
+        idx = parent_opts.index(parent_filter) - 1
+        parent_code = parents_with_children[idx]["code"]
+        all_accs = [
+            a for a in all_accs
+            if a["code"] == parent_code or a.get("parent_code") == parent_code
+        ]
 
     if all_accs:
-        # 建 code → name 對照表，方便顯示父帳戶
-        _name_by_code = {a["code"]: a["name"] for a in all_accs}
+        # === 樹狀分組排序：parent 在前，children 緊隨其後 ===
+        _all_codes = {a["code"] for a in all_accs}
+        # 頂層 = 無 parent_code OR parent_code 唔喺當前 list 入面
+        top_level = [
+            a for a in all_accs
+            if not a.get("parent_code") or a["parent_code"] not in _all_codes
+        ]
+        children_by_parent = {}
+        for a in all_accs:
+            pc = a.get("parent_code")
+            if pc and pc in _all_codes:
+                children_by_parent.setdefault(pc, []).append(a)
+        # sort top-level by (account_type, sort_order, name)
+        top_level.sort(key=lambda x: (
+            x["account_type"], x.get("sort_order") or 0, x["name"]))
+        # 攤平：頂層 → 佢嘅子 → 下一個頂層
+        ordered = []
+        for top in top_level:
+            ordered.append((top, 0))   # depth 0
+            for child in sorted(children_by_parent.get(top["code"], []),
+                                 key=lambda x: (x.get("sort_order") or 0,
+                                                 x["name"])):
+                ordered.append((child, 1))  # depth 1
+
+        # 建 code → name 對照（包含完整 list，用於顯示父名稱）
+        _name_by_code = {a["code"]: a["name"] for a in all_accs_raw}
 
         df_acc = pd.DataFrame([
             {
                 "代碼": a["code"],
                 "圖示": a.get("icon") or "",
-                "名稱": a["name"],
+                "名稱": (("　└─ " if depth > 0 else "") + a["name"]),
                 "父帳戶": (
                     _name_by_code.get(a.get("parent_code"), "—")
                     if a.get("parent_code") else "—"
@@ -301,7 +359,7 @@ with tab_acc:
                 "排序": a.get("sort_order") or 0,
                 "啟用": "✅" if a.get("is_active") else "❌",
             }
-            for a in all_accs
+            for (a, depth) in ordered
         ])
         sel_acc = st.dataframe(
             df_acc, hide_index=True, use_container_width=True,
