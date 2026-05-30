@@ -696,6 +696,15 @@ def delete_payment_alias(alias_id: int):
         c.execute("DELETE FROM payment_aliases WHERE alias_id=?", (alias_id,))
 
 
+def delete_all_payment_aliases() -> int:
+    """清空所有付款方式對應 — 回傳刪除筆數"""
+    init_db()
+    with _conn() as c:
+        n = c.execute("SELECT COUNT(*) FROM payment_aliases").fetchone()[0]
+        c.execute("DELETE FROM payment_aliases")
+    return int(n or 0)
+
+
 def lookup_payment_alias(payment_method: str | None) -> str | None:
     """揾用戶自訂嘅 alias。Return account_code or None"""
     if not payment_method:

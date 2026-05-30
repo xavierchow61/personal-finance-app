@@ -1329,7 +1329,7 @@ with tab2:
         st.info("尚未設定任何對應。系統會用 fallback 自動分類。")
 
     st.divider()
-    al_c1, al_c2 = st.columns(2)
+    al_c1, al_c2, al_c3 = st.columns(3)
     with al_c1:
         if st.button("📦 一鍵載入預設對應"):
             stats = pfseed.seed_payment_aliases(force=False)
@@ -1349,6 +1349,32 @@ with tab2:
             else:
                 st.warning("⚠️ 已重設為預設值")
             st.rerun()
+    with al_c3:
+        # 全部刪除（兩步確認，防誤撳）
+        if not st.session_state.get("confirm_del_all_aliases"):
+            if st.button("🗑️ 全部刪除", type="secondary",
+                          key="ask_del_all_aliases"):
+                st.session_state["confirm_del_all_aliases"] = True
+                st.rerun()
+        else:
+            st.warning("⚠️ 確認要刪除全部對應？")
+            cc1, cc2 = st.columns(2)
+            if cc1.button("✅ 確定刪除",
+                          type="primary",
+                          key="do_del_all_aliases",
+                          use_container_width=True):
+                try:
+                    n = pfdb.delete_all_payment_aliases()
+                    st.session_state["confirm_del_all_aliases"] = False
+                    st.toast(f"🗑️ 已刪除 {n} 條對應", icon="🗑️")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"刪除失敗：{ex}")
+            if cc2.button("取消",
+                          key="cancel_del_all_aliases",
+                          use_container_width=True):
+                st.session_state["confirm_del_all_aliases"] = False
+                st.rerun()
 
     with st.expander("➕ 新增對應"):
         with st.form("alias_form"):
