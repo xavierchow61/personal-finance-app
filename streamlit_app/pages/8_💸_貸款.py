@@ -144,8 +144,8 @@ if filtered:
         df_loans, hide_index=True, use_container_width=True,
         on_select="rerun", selection_mode="single-row",
         column_config={
-            "本金": st.column_config.NumberColumn(format="$%.0f"),
-            "每月應供": st.column_config.NumberColumn(format="$%.0f"),
+            "本金": st.column_config.NumberColumn(format="$%.2f"),
+            "每月應供": st.column_config.NumberColumn(format="$%.2f"),
         },
     )
 
@@ -166,12 +166,12 @@ if filtered:
                 total_interest = total_pay - ln["principal"]
 
                 ic1, ic2, ic3 = st.columns(3)
-                ic1.metric("總還款額", f"${total_pay:,.0f}")
-                ic2.metric("總利息", f"${total_interest:,.0f}",
+                ic1.metric("總還款額", f"${total_pay:,.2f}")
+                ic2.metric("總利息", f"${total_interest:,.2f}",
                             f"{(total_interest/ln['principal']*100):.1f}%"
                             if ln["principal"] else "—")
                 ic3.metric("每月應供",
-                            f"${ln.get('monthly_payment') or 0:,.0f}")
+                            f"${ln.get('monthly_payment') or 0:,.2f}")
 
                 with st.form(f"edit_loan_{sel_id}"):
                     ec1, ec2 = st.columns(2)

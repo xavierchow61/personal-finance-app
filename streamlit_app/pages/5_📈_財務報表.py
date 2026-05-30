@@ -90,9 +90,35 @@ with tab1:
 with tab2:
     st.caption("Balance Sheet — 請選擇截止日期")
     from datetime import date as _d
-    as_of = st.date_input("截止日期", _d.today(), key="bs_date")
+    bs_c1, bs_c2 = st.columns([1, 2])
+    with bs_c1:
+        as_of = st.date_input("截止日期", _d.today(), key="bs_date")
+    with bs_c2:
+        from personal_finance import db as _pfdb_bs
+        sub_filter = st.multiselect(
+            "📂 篩選子分類（空白 = 全部）",
+            options=(_pfdb_bs.ACCOUNT_SUB_TYPES.get("asset", [])
+                     + _pfdb_bs.ACCOUNT_SUB_TYPES.get("liability", [])),
+            placeholder="例：銀行 / 投資 / 信用卡",
+            key="bs_sub_filter",
+        )
     with st.spinner("🏦 載入資產負債表..."):
         bs = cached_pfr.balance_sheet(as_of.isoformat())
+
+    # 應用 sub_type filter
+    if sub_filter:
+        def _flt(items):
+            return [a for a in items
+                    if (a.get("sub_type") in sub_filter)]
+        bs = {
+            **bs,
+            "assets": _flt(bs["assets"]),
+            "liabilities": _flt(bs["liabilities"]),
+        }
+        bs["total_assets"] = sum(a["balance"] for a in bs["assets"])
+        bs["total_liabilities"] = sum(
+            l["balance"] for l in bs["liabilities"])
+        bs["net_worth"] = bs["total_assets"] - bs["total_liabilities"]
 
     c1, c2, c3 = st.columns(3)
     kpi_card(c1, "💰 資產總額", bs["total_assets"], C["success"], "")
@@ -115,6 +141,7 @@ with tab2:
                       if is_parent else "")
             rows.append({
                 "帳戶": f"{prefix}{a.get('icon') or ''} {a['name']}{suffix}",
+                "子分類": a.get("sub_type") or "—",
                 "餘額 (HKD)": bal,
             })
         return pd.DataFrame(rows)

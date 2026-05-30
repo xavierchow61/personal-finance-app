@@ -84,7 +84,7 @@ def all_account_balances(as_of_date: str | None = None) -> list[dict]:
     sql = f"""
         SELECT a.code, a.name, a.account_type, a.icon, a.color,
                a.currency, a.opening_balance, a.sort_order,
-               a.parent_code,
+               a.parent_code, a.sub_type,
                COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0)
                    AS total_dr,
                COALESCE(SUM(jl.credit * COALESCE(je.fx_rate, 1)), 0)
@@ -96,7 +96,7 @@ def all_account_balances(as_of_date: str | None = None) -> list[dict]:
         WHERE a.is_active = 1
         GROUP BY a.code, a.name, a.account_type, a.icon, a.color,
                  a.currency, a.opening_balance, a.sort_order,
-                 a.parent_code
+                 a.parent_code, a.sub_type
         ORDER BY a.account_type, a.sort_order, a.name
     """
 
@@ -124,6 +124,8 @@ def all_account_balances(as_of_date: str | None = None) -> list[dict]:
             "sort_order": r["sort_order"] if "sort_order" in r else 0,
             "parent_code": (r["parent_code"]
                              if "parent_code" in r else None),
+            "sub_type": (r["sub_type"]
+                         if "sub_type" in r else None),
             "balance": balance,
         })
     return out
@@ -507,6 +509,7 @@ def balance_sheet(as_of_date: str | None = None) -> dict:
             "code": r["code"], "name": r["name"],
             "icon": r.get("icon"), "balance": bal,
             "parent_code": r.get("parent_code"),
+            "sub_type": r.get("sub_type"),
             "sort_order": r.get("sort_order") or 0,
         }
         if r["account_type"] == "asset":

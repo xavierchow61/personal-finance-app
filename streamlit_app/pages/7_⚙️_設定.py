@@ -258,24 +258,42 @@ with tab_acc:
         "expense": "🛒 支出類別",
         "income": "💼 收入類別",
     }
+    # 子分類選項（從 db 模組取得）
+    SUB_TYPE_OPTS = pfdb.ACCOUNT_SUB_TYPES
 
     # === 篩選 ===
-    flt_col1, flt_col2, flt_col3 = st.columns(3)
+    flt_col1, flt_col2, flt_col3, flt_col4 = st.columns(4)
     type_filter = flt_col1.selectbox(
         "篩選類型",
         ["（全部）"] + list(ACCOUNT_TYPE_LABELS.values()),
         key="acc_type_filter",
     )
+    # sub_type 候選依 type 變化
+    _sub_candidates = []
+    type_code_for_sub = None
+    if type_filter != "（全部）":
+        type_code_for_sub = next(
+            (k for k, v in ACCOUNT_TYPE_LABELS.items()
+             if v == type_filter), None)
+        if type_code_for_sub:
+            _sub_candidates = SUB_TYPE_OPTS.get(type_code_for_sub, [])
+    else:
+        for opts in SUB_TYPE_OPTS.values():
+            _sub_candidates.extend(opts)
+    sub_filter = flt_col2.selectbox(
+        "📂 篩選子分類",
+        ["（全部）"] + _sub_candidates,
+        key="acc_sub_filter",
+    )
 
     # 取資料（全部）
     all_accs_raw = cpfr.list_accounts(active_only=False)  # 暫取全部
-    if type_filter != "（全部）":
-        type_code = next(
-            (k for k, v in ACCOUNT_TYPE_LABELS.items()
-             if v == type_filter), None)
-        if type_code:
-            all_accs_raw = [a for a in all_accs_raw
-                             if a["account_type"] == type_code]
+    if type_filter != "（全部）" and type_code_for_sub:
+        all_accs_raw = [a for a in all_accs_raw
+                         if a["account_type"] == type_code_for_sub]
+    if sub_filter != "（全部）":
+        all_accs_raw = [a for a in all_accs_raw
+                         if a.get("sub_type") == sub_filter]
 
     # === 父帳戶 dropdown（只列頂層、且有子帳戶的帳戶）===
     children_of = {}  # parent_code -> [child_acc, ...]
@@ -291,14 +309,14 @@ with tab_acc:
         f"{a.get('icon') or ''} {a['name']} ({a['code']})"
         for a in parents_with_children
     ]
-    parent_filter = flt_col2.selectbox(
+    parent_filter = flt_col3.selectbox(
         "🌳 父帳戶",
         parent_opts,
         key="acc_parent_filter",
         help="選擇某父帳戶 → 只顯示其本身與子帳戶",
     )
 
-    show_inactive = flt_col3.checkbox(
+    show_inactive = flt_col4.checkbox(
         "包含已停用的帳戶", value=False,
         key="acc_show_inactive",
     )
@@ -409,6 +427,22 @@ with tab_acc:
                 if sel_parent != parent_opts[0] else None
             )
 
+        # 子分類（依 type 出對應選項，無選項時不顯示）
+        sub_opts = SUB_TYPE_OPTS.get(type_code, [])
+        sub_type_val = None
+        if sub_opts:
+            sub_choices = ["（未分類）"] + sub_opts
+            cur_sub = (acc.get("sub_type") if is_edit else None)
+            sub_idx = (sub_choices.index(cur_sub)
+                       if cur_sub in sub_choices else 0)
+            sel_sub = st.selectbox(
+                "📂 子分類",
+                sub_choices, index=sub_idx,
+                help="細分例如：銀行 / 現金 / 投資 / 應收戶口",
+            )
+            sub_type_val = (sel_sub if sel_sub != "（未分類）"
+                            else None)
+
         # 編輯模式專用欄位
         if is_edit:
             sc1, sc2 = st.columns(2)
@@ -470,6 +504,7 @@ with tab_acc:
                     icon=icon_val or None,
                     notes=notes_val or None,
                     parent_code=parent_val,
+                    sub_type=sub_type_val,
                 )
                 if is_edit:
                     from personal_finance import db as _pfdb
@@ -963,9 +998,9 @@ with tab_cc:
             on_select="rerun", selection_mode="single-row",
             column_config={
                 "限額": st.column_config.NumberColumn(
-                    format="$%.0f"),
+                    format="$%.2f"),
                 "已用": st.column_config.NumberColumn(
-                    format="$%.0f"),
+                    format="$%.2f"),
                 "使用率": st.column_config.ProgressColumn(
                     format="%.0f%%", min_value=0, max_value=100),
             },
@@ -1199,7 +1234,58 @@ with tab_cc:
 
 # ============ Tab 1: 外幣匯率 ============
 with tab1:
-    st.caption("設定各幣別對 HKD 的匯率（影響多幣別記賬報表）")
+    st.caption(
+        "設定各幣別對 HKD 的匯率（影響多幣別記賬報表）。"
+        "可手動輸入，或從 frankfurter.app 免費 API（ECB 數據）一鍵更新。"
+    )
+
+    # === 從公開 API 一鍵更新 ===
+    SUPPORTED_FX = ["USD", "JPY", "CNY", "EUR", "GBP", "AUD",
+                     "SGD", "TWD", "CAD", "KRW", "THB"]
+    fx_col1, fx_col2 = st.columns([1, 5])
+    with fx_col1:
+        if st.button("🌐 從 API 更新",
+                      use_container_width=True,
+                      key="fx_api_update",
+                      help="從 frankfurter.app（ECB 官方數據，免費）"
+                           "更新所有支援幣別匯率"):
+            try:
+                import requests
+                from datetime import date as _d
+                symbols = ",".join([c for c in SUPPORTED_FX
+                                     if c != "HKD"])
+                # frankfurter.app 用 EUR 做 base，要轉換
+                # 直接 query base=HKD 反過來算
+                url = (f"https://api.frankfurter.app/latest?"
+                       f"base=HKD&symbols={symbols}")
+                with st.spinner("🌐 從 frankfurter.app 取得最新匯率..."):
+                    r = requests.get(url, timeout=10)
+                    r.raise_for_status()
+                    data = r.json()
+                today = _d.today().isoformat()
+                n = 0
+                for ccy, rate_per_hkd in data.get("rates", {}).items():
+                    # API 回 1 HKD = X CCY，我們要 1 CCY = ? HKD
+                    if rate_per_hkd and rate_per_hkd > 0:
+                        rate_to_hkd = round(1 / rate_per_hkd, 6)
+                        pfdb.set_fx_rate(
+                            currency=ccy,
+                            rate_to_hkd=rate_to_hkd,
+                            as_of_date=today,
+                            notes="frankfurter.app (ECB)",
+                        )
+                        n += 1
+                st.toast(
+                    f"✅ 已更新 {n} 個匯率（截至 {today}）",
+                    icon="🌐",
+                )
+                try:
+                    cpfr.list_fx_rates.clear()
+                except Exception:
+                    pass
+                st.rerun()
+            except Exception as ex:
+                st.error(f"⚠️ API 取得失敗：{ex}")
 
     rates = cpfr.list_fx_rates()
     if rates:

@@ -25,6 +25,14 @@ ACCOUNT_TYPES = {
     "income": "收入 (人工/紅利)",       # +ve balance = 累計收入
 }
 
+# === Account 子分類（可選，依 account_type 提供不同選項）===
+ACCOUNT_SUB_TYPES = {
+    "asset": ["現金", "銀行", "投資", "應收戶口", "其他資產"],
+    "liability": ["信用卡", "個人貸款", "應付款", "其他負債"],
+    "expense": [],
+    "income": [],
+}
+
 # Project 狀態
 PROJECT_STATUSES = ["active", "completed", "cancelled"]
 
@@ -36,6 +44,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     name TEXT NOT NULL,                        -- 顯示名稱「現金」「HSBC Visa」「餐飲」
     account_type TEXT NOT NULL,                -- asset / liability / expense / income
     parent_code TEXT,                          -- 父帳戶 code (NULL = 頂層)
+    sub_type TEXT,                             -- 子分類「銀行」「現金」「投資」「應收戶口」等
     opening_balance REAL DEFAULT 0,
     currency TEXT DEFAULT 'HKD',
     is_active INTEGER DEFAULT 1,
@@ -258,6 +267,8 @@ def init_db(force: bool = False):
                           "rewards_type", "TEXT")
         _safe_add_column(c, "accounts",
                           "parent_code", "TEXT")
+        _safe_add_column(c, "accounts",
+                          "sub_type", "TEXT")
         # Migration：journal_entries 加 currency / fx_rate / hkd_amount
         if not _column_exists(c, "journal_entries", "currency"):
             c.execute("ALTER TABLE journal_entries ADD COLUMN "
@@ -356,10 +367,12 @@ def upsert_account(code: str, name: str, account_type: str,
                     color: str | None = None,
                     icon: str | None = None,
                     notes: str | None = None,
-                    parent_code: str | None = None):
+                    parent_code: str | None = None,
+                    sub_type: str | None = None):
     """新增 / 更新 account。
 
     parent_code: 父帳戶 code（建立樹狀結構）；None = 頂層帳戶
+    sub_type: 子分類（依 ACCOUNT_SUB_TYPES）；None = 未分類
     """
     if account_type not in ACCOUNT_TYPES:
         raise ValueError(f"Invalid account_type: {account_type}")
@@ -368,8 +381,8 @@ def upsert_account(code: str, name: str, account_type: str,
         c.execute("""
             INSERT INTO accounts (code, name, account_type, opening_balance,
                                    currency, is_active, sort_order, color,
-                                   icon, notes, parent_code)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                                   icon, notes, parent_code, sub_type)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(code) DO UPDATE SET
                 name=excluded.name,
                 account_type=excluded.account_type,
@@ -380,10 +393,11 @@ def upsert_account(code: str, name: str, account_type: str,
                 color=excluded.color,
                 icon=excluded.icon,
                 notes=excluded.notes,
-                parent_code=excluded.parent_code
+                parent_code=excluded.parent_code,
+                sub_type=excluded.sub_type
         """, (code, name, account_type, opening_balance, currency,
               1 if is_active else 0, sort_order, color, icon, notes,
-              parent_code))
+              parent_code, sub_type))
 
 
 def delete_account(code: str):

@@ -122,7 +122,7 @@ else:
             go.Bar(
                 x=df_t["month"],
                 y=df_t["amount"],
-                text=[f"${v:,.0f}" for v in df_t["amount"]],
+                text=[f"${v:,.2f}" for v in df_t["amount"]],
                 textposition="outside",
                 textfont=dict(color="#f1f5f9", size=12, family="Inter"),
                 width=bar_width,
