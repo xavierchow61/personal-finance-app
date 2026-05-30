@@ -361,32 +361,53 @@ with tab_acc:
                 "幣別", CURRENCIES, index=curr_idx,
             )
 
-        # 父帳戶（用完整 active list，剔除自己）
+        # 父帳戶（用完整 active list，過濾規則：）
+        #   1. 同類型（asset 對 asset / liability 對 liability...）
+        #   2. 只顯示頂層帳戶（無 parent_code 嘅）→ 避免 3 層嵌套
+        #   3. 排除自己
         _all = cpfr.list_accounts(active_only=True)
-        same_type = [
-            a for a in _all
-            if a["account_type"] == type_code
-            and (not is_edit or a["code"] != code_val)
-        ]
-        parent_opts = ["（無 — 頂層帳戶）"] + [
-            f"{a.get('icon') or ''} {a['name']} ({a['code']})"
-            for a in same_type
-        ]
-        cur_parent_idx = 0
-        if is_edit and acc.get("parent_code"):
-            for i, a in enumerate(same_type, start=1):
-                if a["code"] == acc["parent_code"]:
-                    cur_parent_idx = i
-                    break
-        sel_parent = st.selectbox(
-            "🌳 父帳戶（選填，將此帳戶歸類在某帳戶之下）",
-            parent_opts, index=cur_parent_idx,
-            help="例：Mox 信用卡 / Mox 保險 → 父帳戶 = Mox Bank",
-        )
-        parent_val = (
-            same_type[parent_opts.index(sel_parent) - 1]["code"]
-            if sel_parent != parent_opts[0] else None
-        )
+
+        # 檢查：當前編輯嘅帳戶自己有冇子？如有 → 唔可以再有父
+        _has_children = False
+        if is_edit:
+            _has_children = any(
+                a.get("parent_code") == code_val for a in _all
+            )
+
+        if _has_children:
+            st.selectbox(
+                "🌳 父帳戶",
+                ["（不適用 — 此帳戶已有子帳戶，必須保持頂層）"],
+                index=0, disabled=True,
+                help="若要改為非頂層，請先將其子帳戶重新分配",
+            )
+            parent_val = None
+        else:
+            same_type = [
+                a for a in _all
+                if a["account_type"] == type_code
+                and not a.get("parent_code")
+                and (not is_edit or a["code"] != code_val)
+            ]
+            parent_opts = ["（無 — 頂層帳戶）"] + [
+                f"{a.get('icon') or ''} {a['name']} ({a['code']})"
+                for a in same_type
+            ]
+            cur_parent_idx = 0
+            if is_edit and acc.get("parent_code"):
+                for i, a in enumerate(same_type, start=1):
+                    if a["code"] == acc["parent_code"]:
+                        cur_parent_idx = i
+                        break
+            sel_parent = st.selectbox(
+                "🌳 父帳戶（選填，將此帳戶歸類在某帳戶之下）",
+                parent_opts, index=cur_parent_idx,
+                help="例：Mox 信用卡 / Mox 保險 → 父帳戶 = Mox Bank",
+            )
+            parent_val = (
+                same_type[parent_opts.index(sel_parent) - 1]["code"]
+                if sel_parent != parent_opts[0] else None
+            )
 
         # 編輯模式專用欄位
         if is_edit:
