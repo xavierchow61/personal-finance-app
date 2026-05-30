@@ -19,6 +19,7 @@ app_header("個人記賬", "📈", "收支表 · 資產負債表 · 期間對比
 render_subpage_nav("ledger")
 
 from personal_finance import reports as pfr
+import cached_pfr
 
 PERIODS = {
     "本月": "this_month", "上月": "last_month",
@@ -42,7 +43,8 @@ with tab1:
 
     st.markdown(f"**📅 {p_label}**（{start} 至 {end}）")
 
-    pl = pfr.income_statement(start, end)
+    with st.spinner("📊 載入收支表..."):
+        pl = cached_pfr.income_statement(start, end)
     c1, c2, c3 = st.columns(3)
     kpi_card(c1, "💼 總收入", pl["total_income"], C["success"], "")
     kpi_card(c2, "🛒 總支出", pl["total_expense"], C["warning"], "")
@@ -89,7 +91,8 @@ with tab2:
     st.caption("Balance Sheet — 請選擇截止日期")
     from datetime import date as _d
     as_of = st.date_input("截止日期", _d.today(), key="bs_date")
-    bs = pfr.balance_sheet(as_of.isoformat())
+    with st.spinner("🏦 載入資產負債表..."):
+        bs = cached_pfr.balance_sheet(as_of.isoformat())
 
     c1, c2, c3 = st.columns(3)
     kpi_card(c1, "💰 資產總額", bs["total_assets"], C["success"], "")
@@ -136,7 +139,8 @@ with tab3:
     pb_label = cc2.selectbox("期間 B", list(PERIODS.keys()),
                               index=1, key="cmp_b")
 
-    cmp = pfr.period_compare(PERIODS[pa_label], PERIODS[pb_label])
+    with st.spinner("⚖️ 載入期間對比..."):
+        cmp = cached_pfr.period_compare(PERIODS[pa_label], PERIODS[pb_label])
 
     summary_df = pd.DataFrame([
         {"指標": "💼 收入",

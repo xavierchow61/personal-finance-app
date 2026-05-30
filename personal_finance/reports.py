@@ -488,19 +488,23 @@ def balance_sheet(as_of_date: str | None = None) -> dict:
     if not as_of_date:
         as_of_date = date.today().isoformat()
 
+    # ⚡ 用優化版單一 SQL（all_account_balances），
+    # 取代之前 N+1 query pattern（雲端 Supabase 會 timeout）
+    all_bals = all_account_balances(as_of_date)
+
     assets = []
     liabs = []
-    for a in db.list_accounts(active_only=True):
-        if a["account_type"] not in ("asset", "liability"):
+    for r in all_bals:
+        if r["account_type"] not in ("asset", "liability"):
             continue
-        bal = account_balance(a["code"], as_of_date=as_of_date, in_hkd=True)
+        bal = float(r["balance"] or 0)
         if abs(bal) < 0.005:
             continue  # skip zero balance
         item = {
-            "code": a["code"], "name": a["name"],
-            "icon": a["icon"], "balance": bal,
+            "code": r["code"], "name": r["name"],
+            "icon": r.get("icon"), "balance": bal,
         }
-        if a["account_type"] == "asset":
+        if r["account_type"] == "asset":
             assets.append(item)
         else:
             liabs.append(item)
