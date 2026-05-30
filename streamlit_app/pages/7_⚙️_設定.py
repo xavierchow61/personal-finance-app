@@ -18,6 +18,7 @@ app_header("進階設定", "⚙️",
            "帳戶 · 匯率 · 付款方式對應 · 期間鎖定 · 專案管理")
 
 from personal_finance import db as pfdb, seed as pfseed
+import cached_pfr as cpfr
 
 tab0, tab_acc, tab_cc, tab1, tab2, tab3, tab4 = st.tabs([
     "📖 使用教學",
@@ -267,7 +268,7 @@ with tab_acc:
     )
 
     # 取資料（全部）
-    all_accs_raw = pfdb.list_accounts(active_only=not False)  # 暫取全部
+    all_accs_raw = cpfr.list_accounts(active_only=False)  # 暫取全部
     if type_filter != "（全部）":
         type_code = next(
             (k for k, v in ACCOUNT_TYPE_LABELS.items()
@@ -361,7 +362,7 @@ with tab_acc:
             )
 
         # 父帳戶（用完整 active list，剔除自己）
-        _all = pfdb.list_accounts(active_only=True)
+        _all = cpfr.list_accounts(active_only=True)
         same_type = [
             a for a in _all
             if a["account_type"] == type_code
@@ -789,7 +790,7 @@ with tab_cc:
     try:
         # 強制 init_db 確保新表存在
         pfdb.init_db()
-        cards = pfdb.list_credit_cards()
+        cards = cpfr.list_credit_cards()
     except Exception as ex:
         st.error(
             f"⚠️ 無法載入信用卡資料：{type(ex).__name__}: {ex}\n\n"
@@ -1055,7 +1056,7 @@ with tab_cc:
     st.divider()
     with st.expander("➕ 新增信用卡", expanded=not bool(cards)):
         # 找出可用的 liability accounts（未有 credit_card 紀錄的）
-        liab_accs = pfdb.list_accounts(account_type="liability")
+        liab_accs = cpfr.list_accounts(account_type="liability")
         existing_codes = {c["account_code"] for c in cards}
         available = [a for a in liab_accs
                      if a["code"] not in existing_codes]
@@ -1156,7 +1157,7 @@ with tab_cc:
 with tab1:
     st.caption("設定各幣別對 HKD 的匯率（影響多幣別記賬報表）")
 
-    rates = pfdb.list_fx_rates()
+    rates = cpfr.list_fx_rates()
     if rates:
         df_fx = pd.DataFrame([
             {
@@ -1232,22 +1233,24 @@ with tab2:
                 return a["code"]
         return None
 
-    # 找出未對應的 OCR 字眼
-    all_invoices = _invdb.list_all()
+    # 找出未對應的 OCR 字眼 — 用 cache 避免重複載入單據
+    import cached_pfr as _cpfr
+    all_invoices = _cpfr.invoices_list_all()
     payment_methods_seen = sorted({
         (i.get("payment_method") or "").strip()
         for i in all_invoices
         if i.get("payment_method")
         and i.get("payment_method").strip()
     })
+    # 重要優化：用 cache 取得 aliases，而且唔再做 N 次 lookup_payment_alias()
+    # （該 lookup 與 existing_aliases_lower 檢查重複）
     existing_aliases_lower = {
         a["keyword"].lower().strip()
-        for a in pfdb.list_payment_aliases()
+        for a in _cpfr.list_payment_aliases()
     }
     unmapped = [
         m for m in payment_methods_seen
         if m.lower() not in existing_aliases_lower
-        and not pfdb.lookup_payment_alias(m)
     ]
 
     if unmapped:
@@ -1276,8 +1279,8 @@ with tab2:
         )
 
         # 載入所有可選帳戶
-        _accs = pfdb.list_accounts(account_type="asset") + \
-                pfdb.list_accounts(account_type="liability")
+        _accs = cpfr.list_accounts(account_type="asset") + \
+                cpfr.list_accounts(account_type="liability")
         _acc_opts = {
             f"{a.get('icon') or ''} {a['name']} ({a['code']})":
                 a["code"]
@@ -1368,8 +1371,8 @@ with tab2:
         st.caption("✏️ 修改現有對應" if is_edit
                    else "➕ 新增付款方式對應")
 
-        _accs = pfdb.list_accounts(account_type="asset") + \
-                pfdb.list_accounts(account_type="liability")
+        _accs = cpfr.list_accounts(account_type="asset") + \
+                cpfr.list_accounts(account_type="liability")
         _acc_opts = {
             f"{a.get('icon') or ''} {a['name']} ({a['code']})":
                 a["code"]
@@ -1470,7 +1473,7 @@ with tab2:
     _alias_action_bar = st.container()
     st.divider()
 
-    aliases = pfdb.list_payment_aliases()
+    aliases = cpfr.list_payment_aliases()
     if aliases:
         # === 批量編輯 toggle ===
         _alias_bulk_edit = st.toggle(
@@ -1480,8 +1483,8 @@ with tab2:
         )
 
         # 帳戶選項（給對應帳戶欄用）
-        _accs_for_edit = pfdb.list_accounts(account_type="asset") + \
-                         pfdb.list_accounts(account_type="liability")
+        _accs_for_edit = cpfr.list_accounts(account_type="asset") + \
+                         cpfr.list_accounts(account_type="liability")
         _acc_codes = [a["code"] for a in _accs_for_edit]
 
         if _alias_bulk_edit:
@@ -1745,7 +1748,7 @@ with tab3:
         "建議每月月結後鎖定上月。"
     )
 
-    closed = pfdb.list_closed_periods()
+    closed = cpfr.list_closed_periods()
     if closed:
         df_cl = pd.DataFrame([
             {
@@ -1803,7 +1806,7 @@ with tab3:
 with tab4:
     st.caption("建立專案以追蹤特定開支（例如：旅行、裝修、副業）")
 
-    projects = pfdb.list_projects()
+    projects = cpfr.list_projects()
     if projects:
         df_pj = pd.DataFrame([
             {

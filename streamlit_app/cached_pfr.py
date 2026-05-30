@@ -15,6 +15,46 @@ from personal_finance import reports as pfr
 import database as invdb
 
 
+# === Settings page caches ===
+
+@st.cache_data(ttl=60, show_spinner=False)
+def list_accounts(active_only=True, account_type=None):
+    from personal_finance import db as pfdb
+    return pfdb.list_accounts(
+        active_only=active_only, account_type=account_type)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def list_payment_aliases():
+    from personal_finance import db as pfdb
+    return pfdb.list_payment_aliases()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def list_credit_cards():
+    from personal_finance import db as pfdb
+    return pfdb.list_credit_cards()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def list_fx_rates():
+    from personal_finance import db as pfdb
+    return pfdb.list_fx_rates() if hasattr(pfdb, 'list_fx_rates') else []
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def list_projects():
+    from personal_finance import db as pfdb
+    return pfdb.list_projects() if hasattr(pfdb, 'list_projects') else []
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def list_closed_periods():
+    from personal_finance import db as pfdb
+    return (pfdb.list_closed_periods()
+            if hasattr(pfdb, 'list_closed_periods') else [])
+
+
 # === Personal Finance Reports ===
 
 @st.cache_data(ttl=60, show_spinner=False)
