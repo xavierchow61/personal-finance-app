@@ -302,6 +302,94 @@ with tab_acc:
         key="acc_show_inactive",
     )
 
+    # === 新增帳戶（放在清單上方，更易見）===
+    with st.expander("➕ 新增帳戶", expanded=False):
+        # 用未過濾嘅完整列表做父帳戶候選（避免 dropdown 空）
+        _all_for_parent = pfdb.list_accounts(active_only=True)
+        with st.form("new_acc"):
+            nc1, nc2 = st.columns(2)
+            with nc1:
+                na_code = st.text_input(
+                    "帳戶代碼（英文 / 底線，建立後不能改）",
+                    placeholder="例：ZA_BANK / CITI_VISA / FOOD",
+                )
+                na_name = st.text_input(
+                    "顯示名稱",
+                    placeholder="例：ZA Bank / Citi Visa / 餐飲",
+                )
+                na_type_label = st.selectbox(
+                    "帳戶類型",
+                    list(ACCOUNT_TYPE_LABELS.values()),
+                )
+                na_type = next(
+                    (k for k, v in ACCOUNT_TYPE_LABELS.items()
+                     if v == na_type_label), "asset")
+            with nc2:
+                na_icon = st.text_input(
+                    "圖示 emoji（選填）",
+                    placeholder="例：🏦 💳 🛒",
+                )
+                na_opening = st.number_input(
+                    "期初餘額", value=0.0, format="%.2f",
+                )
+                na_currency = st.selectbox(
+                    "幣別",
+                    ["HKD", "USD", "JPY", "CNY", "EUR",
+                      "GBP", "AUD", "SGD", "TWD"],
+                )
+            # 父帳戶（樹狀結構）— 用完整列表
+            same_type_candidates = [
+                a for a in _all_for_parent
+                if a["account_type"] == na_type
+            ]
+            parent_opts = ["（無 — 頂層帳戶）"] + [
+                f"{a.get('icon') or ''} {a['name']} ({a['code']})"
+                for a in same_type_candidates
+            ]
+            na_parent_sel = st.selectbox(
+                "🌳 父帳戶（選填，將此帳戶歸類在某帳戶之下）",
+                parent_opts,
+                help="例：建立「Mox 信用卡」時揀父帳戶 = Mox Bank",
+            )
+            na_parent = (
+                same_type_candidates[
+                    parent_opts.index(na_parent_sel) - 1
+                ]["code"]
+                if na_parent_sel != parent_opts[0] else None
+            )
+            na_notes = st.text_input("備註（選填）", "")
+
+            if st.form_submit_button(
+                    "✨ 建立帳戶", type="primary",
+                    use_container_width=True):
+                if not na_code.strip():
+                    st.error("代碼不能為空")
+                elif not na_name.strip():
+                    st.error("名稱不能為空")
+                elif pfdb.get_account(na_code.strip().upper()):
+                    st.error(f"代碼「{na_code}」已存在")
+                else:
+                    try:
+                        pfdb.upsert_account(
+                            code=na_code.strip().upper(),
+                            name=na_name.strip(),
+                            account_type=na_type,
+                            opening_balance=na_opening,
+                            currency=na_currency,
+                            icon=na_icon or None,
+                            notes=na_notes or None,
+                            parent_code=na_parent,
+                        )
+                        st.success(
+                            f"✅ 建立成功：{na_icon or ''} {na_name} "
+                            f"({na_code.upper()})"
+                        )
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"建立失敗：{ex}")
+
+    st.divider()
+
     # 應用 active filter
     all_accs = (all_accs_raw if show_inactive
                  else [a for a in all_accs_raw if a.get("is_active")])
@@ -499,91 +587,6 @@ with tab_acc:
                                 )
     else:
         st.info("尚無符合條件的帳戶。")
-
-    # === 新增帳戶 ===
-    st.divider()
-    with st.expander("➕ 新增帳戶", expanded=False):
-        with st.form("new_acc"):
-            nc1, nc2 = st.columns(2)
-            with nc1:
-                na_code = st.text_input(
-                    "帳戶代碼（英文 / 底線，建立後不能改）",
-                    placeholder="例：ZA_BANK / CITI_VISA / FOOD",
-                )
-                na_name = st.text_input(
-                    "顯示名稱",
-                    placeholder="例：ZA Bank / Citi Visa / 餐飲",
-                )
-                na_type_label = st.selectbox(
-                    "帳戶類型",
-                    list(ACCOUNT_TYPE_LABELS.values()),
-                )
-                na_type = next(
-                    (k for k, v in ACCOUNT_TYPE_LABELS.items()
-                     if v == na_type_label), "asset")
-            with nc2:
-                na_icon = st.text_input(
-                    "圖示 emoji（選填）",
-                    placeholder="例：🏦 💳 🛒",
-                )
-                na_opening = st.number_input(
-                    "期初餘額", value=0.0, format="%.2f",
-                )
-                na_currency = st.selectbox(
-                    "幣別",
-                    ["HKD", "USD", "JPY", "CNY", "EUR",
-                      "GBP", "AUD", "SGD", "TWD"],
-                )
-            # 父帳戶（樹狀結構）
-            same_type_candidates = [
-                a for a in all_accs if a["account_type"] == na_type
-            ]
-            parent_opts = ["（無 — 頂層帳戶）"] + [
-                f"{a.get('icon') or ''} {a['name']} ({a['code']})"
-                for a in same_type_candidates
-            ]
-            na_parent_sel = st.selectbox(
-                "🌳 父帳戶（選填，將此帳戶歸類在某帳戶之下）",
-                parent_opts,
-                help="例：建立「Mox 信用卡」時揀父帳戶 = Mox Bank",
-            )
-            na_parent = (
-                same_type_candidates[
-                    parent_opts.index(na_parent_sel) - 1
-                ]["code"]
-                if na_parent_sel != parent_opts[0] else None
-            )
-            na_notes = st.text_input("備註（選填）", "")
-
-            if st.form_submit_button(
-                    "✨ 建立帳戶", type="primary",
-                    use_container_width=True):
-                # 驗證
-                if not na_code.strip():
-                    st.error("代碼不能為空")
-                elif not na_name.strip():
-                    st.error("名稱不能為空")
-                elif pfdb.get_account(na_code.strip().upper()):
-                    st.error(f"代碼「{na_code}」已存在")
-                else:
-                    try:
-                        pfdb.upsert_account(
-                            code=na_code.strip().upper(),
-                            name=na_name.strip(),
-                            account_type=na_type,
-                            opening_balance=na_opening,
-                            currency=na_currency,
-                            icon=na_icon or None,
-                            notes=na_notes or None,
-                            parent_code=na_parent,
-                        )
-                        st.success(
-                            f"✅ 建立成功：{na_icon or ''} {na_name} "
-                            f"({na_code.upper()})"
-                        )
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(f"建立失敗：{ex}")
 
 
 # ============ Tab 信用卡管理 ============
