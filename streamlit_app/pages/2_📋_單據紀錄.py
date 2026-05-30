@@ -21,42 +21,47 @@ import database as invdb
 import excel_exporter
 from config import CATEGORIES
 
-# === 頂部工具列：匯出 Excel ===
+# === 頂部工具列：匯出 Excel（一鍵下載）===
+import cached_pfr as _cpfr
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _build_invoices_xlsx(_user_id):
+    """建立單據 Excel 內容（快取 60 秒；資料變動會由 invalidate_invoices 清）"""
+    import io
+    from openpyxl import Workbook
+    buf = io.BytesIO()
+    wb = Workbook()
+    dash = wb.active
+    invoices = invdb.list_all()
+    excel_exporter._write_dashboard(dash, invoices)
+    main = wb.create_sheet()
+    excel_exporter._write_main_sheet(main, invoices)
+    reimb = wb.create_sheet()
+    excel_exporter._write_reimbursement_sheet(reimb)
+    wb.active = 0
+    wb.save(buf)
+    return buf.getvalue()
+
+
 top_l, top_r = st.columns([5, 2])
 with top_r:
-    if st.button("📊 匯出全部單據為 Excel", use_container_width=True):
-        try:
-            import io, datetime as _dt
-            from openpyxl import Workbook
-            buf = io.BytesIO()
-            wb = Workbook()
-            dash = wb.active
-            invoices = invdb.list_all()
-            excel_exporter._write_dashboard(dash, invoices)
-            main = wb.create_sheet()
-            excel_exporter._write_main_sheet(main, invoices)
-            reimb = wb.create_sheet()
-            excel_exporter._write_reimbursement_sheet(reimb)
-            wb.active = 0
-            wb.save(buf)
-            buf.seek(0)
-            st.session_state["xlsx_buffer"] = buf.getvalue()
-            st.session_state["xlsx_name"] = (
-                f"單據紀錄_{_dt.datetime.now():%Y%m%d_%H%M%S}.xlsx"
-            )
-        except Exception as ex:
-            st.error(f"匯出失敗：{ex}")
-
-    if "xlsx_buffer" in st.session_state:
+    try:
+        import datetime as _dt
+        _xlsx_data = _build_invoices_xlsx(_cpfr._uid())
         st.download_button(
-            "⬇️ 點此下載 Excel",
-            data=st.session_state["xlsx_buffer"],
-            file_name=st.session_state.get("xlsx_name",
-                                              "單據紀錄.xlsx"),
+            "📊 匯出 Excel",
+            data=_xlsx_data,
+            file_name=(
+                f"單據紀錄_{_dt.datetime.now():%Y%m%d_%H%M%S}.xlsx"
+            ),
             mime=("application/vnd.openxmlformats-officedocument."
                   "spreadsheetml.sheet"),
             use_container_width=True,
+            type="primary",
         )
+    except Exception as ex:
+        st.error(f"匯出失敗：{type(ex).__name__}: {ex}")
 
 # === 篩選器 ===
 fc1, fc2, fc3, fc4 = st.columns(4)

@@ -28,36 +28,48 @@ _entries = _bundle["entries"]
 _accounts = _bundle["accounts"]
 _balances = _bundle["balances"]
 
-# === 頂部工具列：匯出 Excel ===
+# === 頂部工具列：匯出 Excel（一鍵下載）===
+import cached_pfr as _cpfr
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _build_pf_xlsx(_user_id, period):
+    """建立個人記賬 Excel；cloud 用 BytesIO 避免 /tmp 權限問題"""
+    import tempfile
+    from pathlib import Path as _P
+    import datetime as _dt
+    ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    tmp = _P(tempfile.gettempdir()) / f"PF_{_user_id}_{ts}.xlsx"
+    pfexp.export_all(tmp, period=period or None)
+    data = tmp.read_bytes()
+    try:
+        tmp.unlink()
+    except Exception:
+        pass
+    return data
+
+
 exp_l, exp_c, exp_r = st.columns([3, 2, 2])
 with exp_c:
     period_in = st.text_input("📅 指定 period（選填，YYYY-MM）", "",
                                 placeholder="留空 = 全部")
 with exp_r:
-    if st.button("📊 匯出個人記賬 Excel", use_container_width=True):
-        try:
-            import tempfile, datetime as _dt
-            from pathlib import Path as _P
-            ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-            tmp = _P(tempfile.gettempdir()) / f"PF_{ts}.xlsx"
-            pfexp.export_all(tmp, period=period_in.strip() or None)
-            st.session_state["pf_xlsx_buffer"] = tmp.read_bytes()
-            st.session_state["pf_xlsx_name"] = (
-                f"個人記賬_{period_in or '全部'}_{ts}.xlsx"
-            )
-        except Exception as ex:
-            st.error(f"匯出失敗：{ex}")
-
-    if "pf_xlsx_buffer" in st.session_state:
+    try:
+        import datetime as _dt
+        _pf_data = _build_pf_xlsx(_cpfr._uid(),
+                                    period_in.strip() or None)
+        ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         st.download_button(
-            "⬇️ 點此下載",
-            data=st.session_state["pf_xlsx_buffer"],
-            file_name=st.session_state.get("pf_xlsx_name",
-                                              "個人記賬.xlsx"),
+            "📊 匯出 Excel",
+            data=_pf_data,
+            file_name=f"個人記賬_{period_in or '全部'}_{ts}.xlsx",
             mime=("application/vnd.openxmlformats-officedocument."
                   "spreadsheetml.sheet"),
             use_container_width=True,
+            type="primary",
         )
+    except Exception as ex:
+        st.error(f"匯出失敗：{type(ex).__name__}: {ex}")
 
 st.divider()
 
