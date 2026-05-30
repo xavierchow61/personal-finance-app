@@ -539,63 +539,198 @@ with tab_acc:
         # 建 code → name 對照（包含完整 list，用於顯示父名稱）
         _name_by_code = {a["code"]: a["name"] for a in all_accs_raw}
 
-        df_acc = pd.DataFrame([
-            {
-                "代碼": a["code"],
-                "圖示": a.get("icon") or "",
-                "名稱": (("　└─ " if depth > 0 else "") + a["name"]),
-                "父帳戶": (
-                    _name_by_code.get(a.get("parent_code"), "—")
-                    if a.get("parent_code") else "—"
-                ),
-                "類型": ACCOUNT_TYPE_LABELS.get(
-                    a["account_type"], a["account_type"]),
-                "幣別": a.get("currency") or "HKD",
-                "期初餘額": a.get("opening_balance") or 0,
-                "排序": a.get("sort_order") or 0,
-                "啟用": "✅" if a.get("is_active") else "❌",
-            }
-            for (a, depth) in ordered
-        ])
-        sel_acc = st.dataframe(
-            df_acc, hide_index=True, use_container_width=True,
-            on_select="rerun", selection_mode="single-row",
-            column_config={
-                "期初餘額": st.column_config.NumberColumn(
-                    format="$%.2f"),
-            },
+        # === 批量編輯 toggle ===
+        _bulk_edit = st.toggle(
+            "📝 批量編輯模式（可一次過改多個帳戶，最後撳儲存）",
+            key="acc_bulk_edit_toggle",
+            help="開啟後可直接喺表入面改：圖示／名稱／幣別／"
+                 "期初餘額／排序／啟用",
         )
 
-        # === 填埋頂部按鈕區（新增 + 編輯同一行）===
-        _has_sel = bool(sel_acc.selection.rows)
-        _sel_acc_obj = None
-        if _has_sel:
-            _sel_code = df_acc.iloc[sel_acc.selection.rows[0]]["代碼"]
-            _sel_acc_obj = pfdb.get_account(_sel_code)
+        if _bulk_edit:
+            # === 批量編輯模式 ===
+            bulk_df = pd.DataFrame([
+                {
+                    "代碼": a["code"],
+                    "圖示": a.get("icon") or "",
+                    "名稱": a["name"],
+                    "類型": ACCOUNT_TYPE_LABELS.get(
+                        a["account_type"], a["account_type"]),
+                    "幣別": a.get("currency") or "HKD",
+                    "期初餘額": float(a.get("opening_balance") or 0),
+                    "排序": int(a.get("sort_order") or 0),
+                    "啟用": bool(a.get("is_active")),
+                }
+                for (a, depth) in ordered
+            ])
+            edited_df = st.data_editor(
+                bulk_df,
+                hide_index=True,
+                use_container_width=True,
+                num_rows="fixed",   # 唔畀新增/刪除行（用 dialog 做）
+                column_config={
+                    "代碼": st.column_config.TextColumn(disabled=True),
+                    "類型": st.column_config.TextColumn(disabled=True),
+                    "幣別": st.column_config.SelectboxColumn(
+                        options=CURRENCIES, required=True,
+                    ),
+                    "圖示": st.column_config.TextColumn(
+                        help="emoji，例：🏦 💳",
+                    ),
+                    "名稱": st.column_config.TextColumn(required=True),
+                    "期初餘額": st.column_config.NumberColumn(
+                        format="$%.2f", step=0.01,
+                    ),
+                    "排序": st.column_config.NumberColumn(
+                        step=1, format="%d",
+                    ),
+                    "啟用": st.column_config.CheckboxColumn(),
+                },
+                key="acc_data_editor",
+            )
 
-        with _action_bar:
-            ba1, ba2, _ba_spacer = st.columns([1, 1, 4])
-            with ba1:
-                if st.button("➕ 新增帳戶",
-                              use_container_width=True,
-                              key="open_new_acc_dlg"):
-                    _account_dialog("new")
-            with ba2:
-                if _sel_acc_obj:
-                    _btn_label = (
-                        f"✏️ 編輯：{_sel_acc_obj.get('icon') or ''}"
-                        f"{_sel_acc_obj['name']}"
-                    )
-                else:
-                    _btn_label = "✏️ 編輯（先揀一行）"
-                if st.button(
-                    _btn_label,
-                    use_container_width=True,
-                    disabled=not _has_sel,
-                    key="open_edit_dlg",
-                ):
+            # 填埋頂部按鈕區：儲存 + 取消
+            with _action_bar:
+                sa1, sa2, _sa_spacer = st.columns([1, 1, 4])
+                with sa1:
+                    if st.button("💾 儲存全部變更",
+                                  type="primary",
+                                  use_container_width=True,
+                                  key="bulk_save"):
+                        n_updated = 0
+                        errors = []
+                        for i in range(len(bulk_df)):
+                            orig = bulk_df.iloc[i]
+                            new = edited_df.iloc[i]
+                            code = orig["代碼"]
+                            # 比較有冇 diff
+                            diff = (
+                                (orig["圖示"] or "") != (new["圖示"] or "")
+                                or orig["名稱"] != new["名稱"]
+                                or orig["幣別"] != new["幣別"]
+                                or float(orig["期初餘額"]) !=
+                                   float(new["期初餘額"])
+                                or int(orig["排序"]) != int(new["排序"])
+                                or bool(orig["啟用"]) != bool(new["啟用"])
+                            )
+                            if not diff:
+                                continue
+                            try:
+                                _acc = pfdb.get_account(code)
+                                pfdb.upsert_account(
+                                    code=code,
+                                    name=new["名稱"].strip(),
+                                    account_type=_acc["account_type"],
+                                    opening_balance=float(new["期初餘額"]),
+                                    currency=new["幣別"],
+                                    sort_order=int(new["排序"]),
+                                    icon=(new["圖示"] or None),
+                                    notes=_acc.get("notes"),
+                                    parent_code=_acc.get("parent_code"),
+                                )
+                                # is_active 要 raw SQL
+                                from personal_finance import db as _pfdb
+                                with _pfdb._conn() as _c:
+                                    _c.execute(
+                                        "UPDATE accounts "
+                                        "SET is_active=? WHERE code=?",
+                                        (1 if new["啟用"] else 0, code),
+                                    )
+                                n_updated += 1
+                            except Exception as ex:
+                                errors.append(f"{code}: {ex}")
+                        if errors:
+                            st.error(
+                                f"⚠️ 部份失敗：\n\n" + "\n\n".join(errors)
+                            )
+                        if n_updated > 0:
+                            st.toast(
+                                f"✅ 已更新 {n_updated} 個帳戶",
+                                icon="✅",
+                            )
+                            try:
+                                import cached_pfr
+                                cached_pfr.invalidate_all()
+                            except Exception:
+                                pass
+                            # 關閉批量編輯模式
+                            st.session_state[
+                                "acc_bulk_edit_toggle"] = False
+                            st.rerun()
+                        else:
+                            st.info("ℹ️ 沒有資料變動")
+                with sa2:
+                    if st.button("❌ 取消編輯",
+                                  use_container_width=True,
+                                  key="bulk_cancel"):
+                        st.session_state[
+                            "acc_bulk_edit_toggle"] = False
+                        st.rerun()
+
+            st.caption(
+                "💡 想改父帳戶 / 類型 / 備註，或刪帳戶？"
+                "請關閉批量編輯，揀行後撳「✏️ 編輯」開單筆 dialog。"
+            )
+        else:
+            # === 一般檢視模式 ===
+            df_acc = pd.DataFrame([
+                {
+                    "代碼": a["code"],
+                    "圖示": a.get("icon") or "",
+                    "名稱": (("　└─ " if depth > 0 else "") + a["name"]),
+                    "父帳戶": (
+                        _name_by_code.get(a.get("parent_code"), "—")
+                        if a.get("parent_code") else "—"
+                    ),
+                    "類型": ACCOUNT_TYPE_LABELS.get(
+                        a["account_type"], a["account_type"]),
+                    "幣別": a.get("currency") or "HKD",
+                    "期初餘額": a.get("opening_balance") or 0,
+                    "排序": a.get("sort_order") or 0,
+                    "啟用": "✅" if a.get("is_active") else "❌",
+                }
+                for (a, depth) in ordered
+            ])
+            sel_acc = st.dataframe(
+                df_acc, hide_index=True, use_container_width=True,
+                on_select="rerun", selection_mode="single-row",
+                column_config={
+                    "期初餘額": st.column_config.NumberColumn(
+                        format="$%.2f"),
+                },
+            )
+
+            # === 填埋頂部按鈕區（新增 + 編輯同一行）===
+            _has_sel = bool(sel_acc.selection.rows)
+            _sel_acc_obj = None
+            if _has_sel:
+                _sel_code = df_acc.iloc[
+                    sel_acc.selection.rows[0]]["代碼"]
+                _sel_acc_obj = pfdb.get_account(_sel_code)
+
+            with _action_bar:
+                ba1, ba2, _ba_spacer = st.columns([1, 1, 4])
+                with ba1:
+                    if st.button("➕ 新增帳戶",
+                                  use_container_width=True,
+                                  key="open_new_acc_dlg"):
+                        _account_dialog("new")
+                with ba2:
                     if _sel_acc_obj:
-                        _account_dialog("edit", _sel_acc_obj)
+                        _btn_label = (
+                            f"✏️ 編輯：{_sel_acc_obj.get('icon') or ''}"
+                            f"{_sel_acc_obj['name']}"
+                        )
+                    else:
+                        _btn_label = "✏️ 編輯（先揀一行）"
+                    if st.button(
+                        _btn_label,
+                        use_container_width=True,
+                        disabled=not _has_sel,
+                        key="open_edit_dlg",
+                    ):
+                        if _sel_acc_obj:
+                            _account_dialog("edit", _sel_acc_obj)
     else:
         # 表為空時填埋按鈕區（只新增）
         with _action_bar:
