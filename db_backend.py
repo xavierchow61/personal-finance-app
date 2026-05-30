@@ -120,6 +120,34 @@ def _get_thread_user_id() -> str | None:
 _INITIALIZED_SCHEMAS: set[str] = set()
 
 
+def _ensure_user_schema_exists(schema_name: str) -> None:
+    """確保 schema 存在（per-process 只執行一次 per schema）。
+
+    用獨立 autocommit connection 做 DDL，避免影響後續 query 嘅 transaction。
+    重要：Transaction Pooler 模式下，DDL 一定要喺自己嘅 connection 做，
+    唔可以同 query 共用（commit 會釋放 connection，下一條 statement 失去 schema）
+    """
+    if schema_name in _INITIALIZED_SCHEMAS:
+        return
+    import psycopg
+    try:
+        con = psycopg.connect(
+            DATABASE_URL,
+            autocommit=True,
+            connect_timeout=20,
+        )
+        try:
+            with con.cursor() as cur:
+                cur.execute(
+                    f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
+            _INITIALIZED_SCHEMAS.add(schema_name)
+        finally:
+            con.close()
+    except Exception as ex:
+        print(f"[db_backend] CREATE SCHEMA {schema_name} failed: {ex}")
+        raise
+
+
 # ============================================================
 # SQL ADAPTER（SQLite → PostgreSQL 翻譯）
 # ============================================================
@@ -273,8 +301,10 @@ class PgCursorAdapter:
 class PgConnAdapter:
     """模擬 sqlite3.Connection API 包住 psycopg connection"""
 
-    def __init__(self, pg_conn):
+    def __init__(self, pg_conn, user_schema: str | None = None):
         self._con = pg_conn
+        # Used by executescript to re-SET search_path after rollback
+        self._user_schema = user_schema
 
     def execute(self, sql, params=()):
         """模擬 sqlite3 con.execute() — INSERT 自動 RETURNING *"""
@@ -290,19 +320,24 @@ class PgConnAdapter:
         if is_insert and not has_returning:
             # 加 RETURNING *
             sql_to_run = sql_adapted.rstrip().rstrip(";") + " RETURNING *"
+            # 用 SAVEPOINT 包住 try，失敗時只 rollback 呢條 statement，
+            # 唔會回滾整個 transaction 嘅 SET search_path
             try:
+                cur.execute("SAVEPOINT sp_insert")
                 cur.execute(sql_to_run, tuple(params) if params else None)
-                # 捕捉第一條 row 攞 id
                 try:
                     captured = cur.fetchone()
                 except Exception:
                     captured = None
+                cur.execute("RELEASE SAVEPOINT sp_insert")
             except Exception as ex:
                 # 某啲 INSERT 唔可以 RETURNING（如 ON CONFLICT 無新 row）
-                # → fallback 跑原 SQL，無 returning
+                # → rollback 去 savepoint，重跑唔加 RETURNING
                 if "ON CONFLICT" in sql_adapted.upper():
-                    # 重新跑唔加 RETURNING
-                    self._con.rollback()
+                    try:
+                        cur.execute("ROLLBACK TO SAVEPOINT sp_insert")
+                    except Exception:
+                        pass
                     cur = self._con.cursor()
                     try:
                         cur.execute(
@@ -319,13 +354,13 @@ class PgConnAdapter:
         return PgCursorAdapter(cur, captured)
 
     def executescript(self, script):
-        """模擬 sqlite3 executescript（PG 唔支援多 statement）
+        """模擬 sqlite3 executescript。
 
-        每條 statement 用獨立 transaction（commit/rollback per statement），
-        確保「already exists」之類嘅錯誤唔會清走之前成功嘅 DDL。
+        🔒 重要：用 SAVEPOINT 而非 commit/rollback per statement，
+        保持喺同一個 transaction 入面（避免 Transaction Pooler 釋放 backend，
+        令後續 statement 失去 search_path）
         """
         script_adapted = adapt_sql(script)
-        # 簡易 split by ;（我哋 schema 簡單，無 trigger / DO block）
         statements = []
         for raw in script_adapted.split(";"):
             cleaned = "\n".join(
@@ -335,15 +370,20 @@ class PgConnAdapter:
             if cleaned:
                 statements.append(cleaned)
 
-        for stmt in statements:
+        for i, stmt in enumerate(statements):
+            sp_name = f"sp_init_{i}"
             cur = self._con.cursor()
             try:
+                cur.execute(f"SAVEPOINT {sp_name}")
                 cur.execute(stmt)
-                self._con.commit()  # 即時 commit 避免被後續錯誤拖累
+                cur.execute(f"RELEASE SAVEPOINT {sp_name}")
             except Exception as ex:
-                self._con.rollback()
+                # Rollback 到 savepoint，唔影響其他成功嘅 DDL
+                try:
+                    cur.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                except Exception:
+                    pass
                 msg = str(ex).lower()
-                # 預期嘅幂等錯誤 → 靜默跳過
                 if ("already exists" in msg
                         or "does not exist" in msg):
                     continue
@@ -376,49 +416,34 @@ def get_conn(sqlite_path: str | Path):
     if IS_POSTGRES:
         import psycopg
         from psycopg.rows import dict_row
+
+        # === Step 1: 解析當前用戶 schema（require auth）===
+        user_schema = _current_user_schema(_get_thread_user_id())
+        if not user_schema:
+            raise RuntimeError(
+                "PostgreSQL mode requires an authenticated user "
+                "before DB access. Please login first."
+            )
+
+        # === Step 2: 確保 schema 存在（獨立 autocommit connection）===
+        # 重要：Transaction Pooler 模式下，CREATE SCHEMA 同 SET search_path
+        # 唔可以 commit 後再做其他嘢，因為 commit 會令 pooler 釋放 backend
+        _ensure_user_schema_exists(user_schema)
+
+        # === Step 3: 開主 connection 做用戶 query ===
         con = psycopg.connect(
             DATABASE_URL,
             row_factory=dict_row,
             autocommit=False,
             connect_timeout=20,
         )
-
-        # === 設 search_path 到當前用戶嘅專屬 schema ===
-        # 🔒 安全：PG 模式下若無 user_schema → raise，
-        # 避免靜默 fallback 到 public schema 讀到其他人嘅資料
-        # 優先用 thread-local（畀 worker thread 用），其次 session_state
-        user_schema = _current_user_schema(_get_thread_user_id())
-        if not user_schema:
-            con.close()
-            raise RuntimeError(
-                "PostgreSQL mode requires an authenticated user "
-                "before DB access. Please login first."
-            )
-        cur = con.cursor()
-        # 首次見呢個 schema → CREATE IF NOT EXISTS
-        if user_schema not in _INITIALIZED_SCHEMAS:
-            try:
+        adapter = PgConnAdapter(con, user_schema=user_schema)
+        try:
+            # 🔒 SET search_path 喺 transaction 第一句執行，
+            # 同用戶 query 一齊 commit 先釋放 connection
+            with con.cursor() as cur:
                 cur.execute(
-                    f'CREATE SCHEMA IF NOT EXISTS "{user_schema}"')
-                con.commit()
-                _INITIALIZED_SCHEMAS.add(user_schema)
-            except Exception as ex:
-                con.rollback()
-                print(f"[db_backend] CREATE SCHEMA failed: {ex}")
-        # 每次 connect 都要 set search_path（per-session）
-        # 🔒 安全：唔包含 public — 避免 user table 唔存在時
-        # fallback 到 public schema
-        try:
-            cur.execute(
-                f'SET search_path TO "{user_schema}"')
-            con.commit()
-        except Exception as ex:
-            con.rollback()
-            print(f"[db_backend] SET search_path failed: {ex}")
-        cur.close()
-
-        adapter = PgConnAdapter(con)
-        try:
+                    f'SET LOCAL search_path TO "{user_schema}"')
             yield adapter
             adapter.commit()
         except Exception:
