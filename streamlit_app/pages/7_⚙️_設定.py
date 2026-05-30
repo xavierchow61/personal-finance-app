@@ -302,8 +302,13 @@ with tab_acc:
         key="acc_show_inactive",
     )
 
-    # === 新增帳戶（放在清單上方，更易見）===
-    with st.expander("➕ 新增帳戶", expanded=False):
+    # === 新增帳戶（小按鈕 popover）===
+    _btn_col, _spacer = st.columns([1, 5])
+    with _btn_col:
+        _new_acc_popover = st.popover(
+            "➕ 新增帳戶", use_container_width=True,
+        )
+    with _new_acc_popover:
         # 用未過濾嘅完整列表做父帳戶候選（避免 dropdown 空）
         _all_for_parent = pfdb.list_accounts(active_only=True)
         with st.form("new_acc"):
