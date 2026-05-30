@@ -20,7 +20,7 @@ app_header("進階設定", "⚙️",
 from personal_finance import db as pfdb, seed as pfseed
 import cached_pfr as cpfr
 
-tab0, tab_acc, tab_cc, tab1, tab2, tab3, tab4 = st.tabs([
+tab0, tab_acc, tab_cc, tab1, tab2, tab3, tab4, tab_priv = st.tabs([
     "📖 使用教學",
     "🏦 帳戶管理",
     "💳 信用卡",
@@ -28,6 +28,7 @@ tab0, tab_acc, tab_cc, tab1, tab2, tab3, tab4 = st.tabs([
     "🔗 付款方式對應",
     "🔒 期間鎖定",
     "🎯 專案管理",
+    "🛡️ 隱私管理",
 ])
 
 # ============ Tab 0: 使用教學 ============
@@ -521,10 +522,10 @@ with tab_acc:
                         f"✅ 建立：{name_val} ({code_final})",
                         icon="🎉",
                     )
-                # 清快取，確保下次載入看到新資料
+                # 只清帳戶相關 cache（list_accounts + 餘額），其餘保留
                 try:
                     import cached_pfr
-                    cached_pfr.invalidate_all()
+                    cached_pfr.invalidate_accounts()
                 except Exception:
                     pass
                 st.rerun()   # ← 關閉 dialog
@@ -539,7 +540,7 @@ with tab_acc:
                 st.toast(f"🗑️ 已刪除 {code_val}", icon="🗑️")
                 try:
                     import cached_pfr
-                    cached_pfr.invalidate_all()
+                    cached_pfr.invalidate_accounts()
                 except Exception:
                     pass
                 st.rerun()
@@ -707,7 +708,7 @@ with tab_acc:
                             )
                             try:
                                 import cached_pfr
-                                cached_pfr.invalidate_all()
+                                cached_pfr.invalidate_accounts()
                             except Exception:
                                 pass
                             # 關閉批量編輯模式
@@ -1572,7 +1573,7 @@ with tab2:
                     )
                 try:
                     import cached_pfr
-                    cached_pfr.invalidate_all()
+                    cached_pfr.invalidate_aliases()
                 except Exception:
                     pass
                 st.rerun()
@@ -1585,7 +1586,7 @@ with tab2:
                 st.toast(f"🗑️ 已刪除 #{cur_id}", icon="🗑️")
                 try:
                     import cached_pfr
-                    cached_pfr.invalidate_all()
+                    cached_pfr.invalidate_aliases()
                 except Exception:
                     pass
                 st.rerun()
@@ -1695,7 +1696,7 @@ with tab2:
                             )
                             try:
                                 import cached_pfr
-                                cached_pfr.invalidate_all()
+                                cached_pfr.invalidate_aliases()
                             except Exception:
                                 pass
                             if "alias_bulk_edit_toggle" \
@@ -1789,7 +1790,7 @@ with tab2:
                                 f"🗑️ 已刪除 {n} 條對應", icon="🗑️")
                             try:
                                 import cached_pfr
-                                cached_pfr.invalidate_all()
+                                cached_pfr.invalidate_aliases()
                             except Exception:
                                 pass
                             st.rerun()
@@ -2008,3 +2009,239 @@ with tab4:
                     st.rerun()
                 else:
                     st.error("名稱不能為空")
+
+
+# ============ Tab 隱私管理 ============
+with tab_priv:
+    st.caption(
+        "管理你嘅資料隱私 — 確保所有資料都儲存喺你嘅私人 schema "
+        "（user_xxx）而非公共 public schema"
+    )
+
+    from db_backend import (
+        IS_POSTGRES, DATABASE_URL,
+        _current_user_schema,
+    )
+    if not IS_POSTGRES:
+        st.info(
+            "💡 你目前用緊 SQLite 本地模式，所有資料已經喺本機檔案，"
+            "不會公開。隱私管理功能只適用於雲端 PostgreSQL 模式。"
+        )
+    else:
+        my_schema = _current_user_schema()
+        st.markdown(
+            f"""
+            <div style='background:rgba(0,166,224,0.08);
+                border:2px solid rgba(0,166,224,0.3);
+                border-radius:14px;padding:1rem 1.4rem;
+                margin-bottom:1rem;'>
+                <div style='color:#0078BA;font-weight:600;
+                    font-size:1rem;margin-bottom:0.3rem;'>
+                    🔒 你嘅私人 Schema
+                </div>
+                <code style='color:#1A1A2E;font-size:1.05rem;'>
+                    {my_schema}
+                </code>
+                <p style='color:#475569;font-size:0.85rem;
+                    margin-top:0.6rem;line-height:1.5;'>
+                    所有新增同更新嘅資料都會儲存喺呢個 schema 內，
+                    其他用戶無法存取。
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # === 統計：你 schema 同 public schema 嘅資料量 ===
+        import psycopg
+        from psycopg.rows import dict_row
+
+        @st.cache_data(ttl=30, show_spinner=False)
+        def _check_schemas(_my_schema):
+            """獨立 autocommit 連接，跨 schema 統計各 table 行數"""
+            con = psycopg.connect(
+                DATABASE_URL, autocommit=True,
+                row_factory=dict_row, connect_timeout=15,
+            )
+            try:
+                cur = con.cursor()
+                tables = [
+                    "accounts", "journal_entries", "journal_lines",
+                    "budgets", "payment_aliases", "fx_rates",
+                    "credit_cards", "loans", "projects",
+                    "closed_periods", "invoices",
+                ]
+                rows = []
+                for t in tables:
+                    pub_n = my_n = 0
+                    try:
+                        cur.execute(
+                            f'SELECT COUNT(*) AS n FROM "public"."{t}"')
+                        pub_n = cur.fetchone()["n"]
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(
+                            f'SELECT COUNT(*) AS n FROM '
+                            f'"{_my_schema}"."{t}"')
+                        my_n = cur.fetchone()["n"]
+                    except Exception:
+                        pass
+                    rows.append({
+                        "資料表": t,
+                        "公共 (public)": pub_n,
+                        "你的私人 schema": my_n,
+                    })
+                return rows
+            finally:
+                con.close()
+
+        try:
+            stats = _check_schemas(my_schema)
+            df_stats = pd.DataFrame(stats)
+            st.dataframe(df_stats, hide_index=True,
+                          use_container_width=True)
+            total_public = sum(r["公共 (public)"] for r in stats)
+            total_mine = sum(r["你的私人 schema"] for r in stats)
+
+            sc1, sc2 = st.columns(2)
+            sc1.metric("📂 公共 public（不應該有）",
+                        f"{total_public} 筆")
+            sc2.metric("🔒 你的私人 schema", f"{total_mine} 筆")
+
+            if total_public > 0:
+                st.warning(
+                    f"⚠️ 偵測到 {total_public} 筆資料仍喺 public schema。"
+                    "建議將佢哋遷移到你嘅私人 schema 再清空 public。"
+                )
+            else:
+                st.success(
+                    "🎉 public schema 已清空，所有資料都喺你嘅私人 schema！"
+                )
+        except Exception as ex:
+            st.error(f"無法統計：{ex}")
+
+        st.divider()
+        st.subheader("🚚 將 public 資料遷移到你嘅私人 schema")
+        st.caption(
+            "將 public schema 嘅資料 INSERT 到你嘅 schema 內，"
+            "原 public 資料仍會保留（要清空請用下方第 2 步）"
+        )
+
+        if not st.session_state.get("confirm_migrate_public"):
+            if st.button("🚚 遷移 public → 我的 schema",
+                          type="primary",
+                          key="ask_migrate"):
+                st.session_state["confirm_migrate_public"] = True
+                st.rerun()
+        else:
+            st.warning(
+                "⚠️ 將會把 public schema 嘅所有資料 copy 到 "
+                f"`{my_schema}`。如有重複代碼會跳過。確定？"
+            )
+            mc1, mc2, _ = st.columns([1, 1, 4])
+            if mc1.button("✅ 確定遷移", type="primary",
+                           key="do_migrate"):
+                try:
+                    con = psycopg.connect(
+                        DATABASE_URL, autocommit=True,
+                        connect_timeout=20,
+                    )
+                    cur = con.cursor()
+                    # 順序重要：先 accounts 再 journal_entries 等
+                    order = [
+                        "accounts", "projects", "fx_rates",
+                        "payment_aliases", "credit_cards",
+                        "loans", "closed_periods",
+                        "journal_entries", "journal_lines",
+                        "budgets", "invoices",
+                    ]
+                    migrated = []
+                    for t in order:
+                        try:
+                            cur.execute(
+                                f'INSERT INTO "{my_schema}"."{t}" '
+                                f'SELECT * FROM "public"."{t}" '
+                                f'ON CONFLICT DO NOTHING'
+                            )
+                            migrated.append(
+                                f"{t}: {cur.rowcount} 行")
+                        except Exception as ex:
+                            migrated.append(f"{t}: ⚠️ {ex}")
+                    con.close()
+                    st.session_state[
+                        "confirm_migrate_public"] = False
+                    try:
+                        import cached_pfr
+                        cached_pfr.invalidate_all()
+                    except Exception:
+                        pass
+                    st.success(
+                        "✅ 遷移完成：\n\n" + "\n\n".join(migrated)
+                    )
+                except Exception as ex:
+                    st.error(f"遷移失敗：{ex}")
+            if mc2.button("❌ 取消", key="cancel_migrate"):
+                st.session_state["confirm_migrate_public"] = False
+                st.rerun()
+
+        st.divider()
+        st.subheader("🗑️ 清空 public schema")
+        st.caption(
+            "確認資料已遷移到你嘅私人 schema 後，可永久刪除 public 嘅資料。"
+            "⚠️ **此操作不可復原**！"
+        )
+
+        if not st.session_state.get("confirm_drop_public"):
+            if st.button("🗑️ 清空 public schema 嘅所有資料",
+                          type="secondary",
+                          key="ask_drop_public"):
+                st.session_state["confirm_drop_public"] = True
+                st.rerun()
+        else:
+            st.error(
+                "⚠️ **最後確認**：永久刪除 public schema 嘅所有 tables？"
+                "此動作無法復原。"
+            )
+            dc1, dc2, _ = st.columns([1, 1, 4])
+            if dc1.button("☠️ 確定永久刪除", type="primary",
+                           key="do_drop_public"):
+                try:
+                    con = psycopg.connect(
+                        DATABASE_URL, autocommit=True,
+                        connect_timeout=20,
+                    )
+                    cur = con.cursor()
+                    tables = [
+                        "invoices", "journal_lines",
+                        "journal_entries", "budgets",
+                        "payment_aliases", "fx_rates",
+                        "credit_cards", "loans", "projects",
+                        "accounts", "closed_periods",
+                    ]
+                    dropped = []
+                    for t in tables:
+                        try:
+                            cur.execute(
+                                f'DROP TABLE IF EXISTS '
+                                f'"public"."{t}" CASCADE')
+                            dropped.append(t)
+                        except Exception as ex:
+                            dropped.append(f"{t} ⚠️ {ex}")
+                    con.close()
+                    st.session_state[
+                        "confirm_drop_public"] = False
+                    try:
+                        import cached_pfr
+                        cached_pfr.invalidate_all()
+                    except Exception:
+                        pass
+                    st.success(
+                        f"☠️ 已刪除 {len(dropped)} 個 public tables"
+                    )
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"刪除失敗：{ex}")
+            if dc2.button("❌ 取消", key="cancel_drop_public"):
+                st.session_state["confirm_drop_public"] = False
+                st.rerun()

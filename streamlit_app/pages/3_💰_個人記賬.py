@@ -120,7 +120,7 @@ with tab1:
                                 icon="🗑️")
                             try:
                                 import cached_pfr
-                                cached_pfr.invalidate_all()
+                                cached_pfr.invalidate_journal()
                             except Exception:
                                 pass
                             st.rerun()
@@ -237,7 +237,12 @@ with tab3:
                     ],
                     currency=currency,
                 )
-                st.success(f"✅ 已寫入分錄 #{eid}")
+                st.toast(f"✅ 已寫入分錄 #{eid}", icon="✅")
+                try:
+                    import cached_pfr
+                    cached_pfr.invalidate_journal()
+                except Exception:
+                    pass
                 st.rerun()
             except Exception as ex:
                 st.error(str(ex))

@@ -254,6 +254,48 @@ def invalidate_invoices():
     _spending_by_category_impl.clear()
 
 
+def invalidate_journal():
+    """⚡ 只清「分錄」相關 cache — 用於新增/編輯/刪除 JE 後。
+
+    不清：list_accounts, list_payment_aliases, list_credit_cards,
+          list_fx_rates, list_projects, list_closed_periods
+    （呢啲 master data 唔會因 JE 變動而變）
+    """
+    # 分錄本身 + 衍生統計
+    _all_account_balances_impl.clear()
+    _net_worth_impl.clear()
+    _income_statement_impl.clear()
+    _spending_by_category_impl.clear()
+    _balance_sheet_impl.clear()
+    _budget_vs_actual_impl.clear()
+    _period_compare_impl.clear()
+    _account_balance_impl.clear()
+    _monthly_spending_impl.clear()
+    # Bundle（包住上述 query 嘅）
+    _fetch_dashboard_bundle_impl.clear()
+    _fetch_ledger_bundle_impl.clear()
+    _fetch_budget_bundle_impl.clear()
+    _fetch_credit_cards_bundle_impl.clear()
+
+
+def invalidate_accounts():
+    """只清帳戶 master + 衍生 — 用於帳戶 create/edit/delete 後"""
+    _list_accounts_impl.clear()
+    _all_account_balances_impl.clear()
+    _net_worth_impl.clear()
+    _balance_sheet_impl.clear()
+    _fetch_dashboard_bundle_impl.clear()
+    _fetch_ledger_bundle_impl.clear()
+    _fetch_budget_bundle_impl.clear()
+    _fetch_reimbursement_bundle_impl.clear()
+    _fetch_credit_cards_bundle_impl.clear()
+
+
+def invalidate_aliases():
+    """付款方式對應 — 唔影響任何餘額"""
+    _list_payment_aliases_impl.clear()
+
+
 # ============================================================
 # 🚀 並行 fetch + bundle cache（用 ThreadPoolExecutor）
 #
