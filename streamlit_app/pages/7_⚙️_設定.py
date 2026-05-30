@@ -457,13 +457,20 @@ with tab_acc:
                             "SET is_active=? WHERE code=?",
                             (1 if active_val else 0, code_final),
                         )
-                    st.success(f"✅ 已更新 {code_final}")
+                    # 用 toast（浮動通知，唔會阻擋 dialog 關閉）
+                    st.toast(f"✅ 已更新 {code_final}", icon="✅")
                 else:
-                    st.success(
-                        f"✅ 建立成功：{icon_val or ''} "
-                        f"{name_val} ({code_final})"
+                    st.toast(
+                        f"✅ 建立：{name_val} ({code_final})",
+                        icon="🎉",
                     )
-                st.rerun()
+                # 清快取，確保下次載入見到新資料
+                try:
+                    import cached_pfr
+                    cached_pfr.invalidate_all()
+                except Exception:
+                    pass
+                st.rerun()   # ← 關閉 dialog
             except Exception as ex:
                 st.error(
                     f"{'更新' if is_edit else '建立'}失敗：{ex}"
@@ -472,7 +479,12 @@ with tab_acc:
         if del_btn:
             try:
                 pfdb.delete_account(code_val)
-                st.success(f"已刪除 {code_val}")
+                st.toast(f"🗑️ 已刪除 {code_val}", icon="🗑️")
+                try:
+                    import cached_pfr
+                    cached_pfr.invalidate_all()
+                except Exception:
+                    pass
                 st.rerun()
             except Exception as ex:
                 st.error(
