@@ -55,21 +55,28 @@ def _sanitize_schema_name(raw: str) -> str:
     return f"user_{safe[:50]}" if safe else ""
 
 
-def _current_user_schema() -> str | None:
+def _current_user_schema(explicit_user_id: str | None = None) -> str | None:
     """取得當前登入用戶嘅專屬 schema 名稱。
 
-    從 Streamlit session 攞 auth_user，
-    回傳「user_<id>」或「user_<email_local>」格式。
-    冇 user / 唔係 PG 模式 → return None（用 public schema）
+    Args:
+        explicit_user_id: 由 caller 顯式傳入（例：worker thread 冇 ScriptRunContext
+                          就要靠 caller 提供）。優先用 explicit。
+
+    Fallback：從 Streamlit session_state.auth_user 攞。
+
+    回傳「user_<sanitized id>」格式；冇 user 或唔係 PG 模式 → None
     """
     if not IS_POSTGRES:
         return None
+    # 1. 優先用 explicit 傳入嘅 id
+    if explicit_user_id:
+        return _sanitize_schema_name(explicit_user_id)
+    # 2. Fallback：由 session_state 攞
     try:
         import streamlit as st
         user = st.session_state.get("auth_user")
         if not user:
             return None
-        # 支援 dict (Supabase) 或 str (舊版)
         if isinstance(user, dict):
             raw = user.get("id") or user.get("email") or ""
             if "@" in raw:
@@ -79,6 +86,34 @@ def _current_user_schema() -> str | None:
         return _sanitize_schema_name(raw)
     except Exception:
         return None
+
+
+# Context-local storage for worker threads（ThreadPoolExecutor）
+import threading
+_thread_user_id = threading.local()
+
+
+def set_thread_user_id(user_id: str | None):
+    """喺 worker thread 內設定當前用戶 id，畀 get_conn() 自動 pick up。
+
+    用法（喺 ThreadPoolExecutor 入面）：
+        uid = auth.get_current_user_id()
+        def worker():
+            set_thread_user_id(uid)
+            try:
+                return some_db_query()
+            finally:
+                set_thread_user_id(None)
+    """
+    if user_id:
+        _thread_user_id.value = user_id
+    else:
+        if hasattr(_thread_user_id, 'value'):
+            del _thread_user_id.value
+
+
+def _get_thread_user_id() -> str | None:
+    return getattr(_thread_user_id, 'value', None)
 
 
 # 已初始化過 schema 嘅集合（避免每次 connect 都 CREATE SCHEMA）
@@ -349,31 +384,38 @@ def get_conn(sqlite_path: str | Path):
         )
 
         # === 設 search_path 到當前用戶嘅專屬 schema ===
-        user_schema = _current_user_schema()
-        if user_schema:
-            cur = con.cursor()
-            # 首次見呢個 schema → CREATE IF NOT EXISTS
-            if user_schema not in _INITIALIZED_SCHEMAS:
-                try:
-                    cur.execute(
-                        f'CREATE SCHEMA IF NOT EXISTS "{user_schema}"')
-                    con.commit()
-                    _INITIALIZED_SCHEMAS.add(user_schema)
-                except Exception as ex:
-                    con.rollback()
-                    # 唔阻 connection；嚴重錯誤會喺 query 時冒出
-                    print(f"[db_backend] CREATE SCHEMA failed: {ex}")
-            # 每次 connect 都要 set search_path（per-session）
-            # 🔒 安全：唔包含 public — 避免 user table 唔存在時 fallback
-            # 到 public schema 讀到舊資料（其他用戶嘅）
+        # 🔒 安全：PG 模式下若無 user_schema → raise，
+        # 避免靜默 fallback 到 public schema 讀到其他人嘅資料
+        # 優先用 thread-local（畀 worker thread 用），其次 session_state
+        user_schema = _current_user_schema(_get_thread_user_id())
+        if not user_schema:
+            con.close()
+            raise RuntimeError(
+                "PostgreSQL mode requires an authenticated user "
+                "before DB access. Please login first."
+            )
+        cur = con.cursor()
+        # 首次見呢個 schema → CREATE IF NOT EXISTS
+        if user_schema not in _INITIALIZED_SCHEMAS:
             try:
                 cur.execute(
-                    f'SET search_path TO "{user_schema}"')
+                    f'CREATE SCHEMA IF NOT EXISTS "{user_schema}"')
                 con.commit()
+                _INITIALIZED_SCHEMAS.add(user_schema)
             except Exception as ex:
                 con.rollback()
-                print(f"[db_backend] SET search_path failed: {ex}")
-            cur.close()
+                print(f"[db_backend] CREATE SCHEMA failed: {ex}")
+        # 每次 connect 都要 set search_path（per-session）
+        # 🔒 安全：唔包含 public — 避免 user table 唔存在時
+        # fallback 到 public schema
+        try:
+            cur.execute(
+                f'SET search_path TO "{user_schema}"')
+            con.commit()
+        except Exception as ex:
+            con.rollback()
+            print(f"[db_backend] SET search_path failed: {ex}")
+        cur.close()
 
         adapter = PgConnAdapter(con)
         try:

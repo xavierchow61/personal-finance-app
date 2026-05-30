@@ -378,15 +378,29 @@ def kpi_card(col, label: str, value, color: str = None, emoji: str = "",
 def init_dbs():
     """確保資料庫已建立及完成初始化
 
-    用 session_state cache — 只首次 page load 執行，
-    之後 reload 自動跳過（避免每次 3 秒 Supabase round trip）
+    🔒 PG 模式下：必須等到用戶 login 先 init，
+    否則 _conn() 會 raise（無 user_schema 就唔可以 query）
+
+    用 session_state cache key per-user，
+    避免兩個用戶喺同一個 tab logout/login 後共用 init state
     """
-    if st.session_state.get("_dbs_initialized"):
+    # Pre-auth：唔好觸發 DB query
+    user = st.session_state.get("auth_user")
+    if not user:
         return
+
+    # Cache key per-user — 確保切換用戶會重新 init
+    uid = (user.get("id") if isinstance(user, dict) else str(user))
+    init_key = f"_dbs_initialized_for::{uid}"
+    if st.session_state.get(init_key):
+        return
+
     from personal_finance import db as pfdb, seed as pfseed
+    import database as invdb
     try:
         with st.spinner("🔧 首次連接資料庫，請耐心等候..."):
             pfdb.init_db()
+            invdb.init_db()   # 補返之前漏咗 invdb init
             # 若帳戶 < 10 個（標準 seed 應有 30+）→ 強制 re-seed
             existing = pfdb.list_accounts(active_only=False)
             if len(existing) < 10:
@@ -394,7 +408,7 @@ def init_dbs():
                     "🌱 建立預設帳戶與付款方式（首次需要 1-2 分鐘）..."
                 ):
                     pfseed.seed_all()
-        st.session_state["_dbs_initialized"] = True
+        st.session_state[init_key] = True
     except Exception as ex:
         st.error(
             f"⚠️ 資料庫初始化失敗：{type(ex).__name__}: {ex}\n\n"

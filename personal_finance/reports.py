@@ -27,6 +27,7 @@ def account_balance(account_code: str,
         in_hkd: True = 用 HKD equivalent（multi-currency entries 自動 convert）
                 False = 用原幣值（適合單一 currency account）
     """
+    db.init_db()   # 確保 schema 已建立（新用戶 schema 第一次 query）
     acc = db.get_account(account_code)
     if not acc:
         return 0
@@ -73,6 +74,7 @@ def all_account_balances(as_of_date: str | None = None) -> list[dict]:
     雲端 PG 上會慢到 3 分鐘。
     新版用 LEFT JOIN 一次過取得所有 account 的 balance。
     """
+    db.init_db()   # 確保 schema 已建立
     # 日期 filter 放在 ON clause 而非 WHERE，
     # 確保無 entries 的 account 仍會出現（balance = opening）
     date_join = ""
