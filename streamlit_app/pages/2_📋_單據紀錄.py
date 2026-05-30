@@ -46,12 +46,12 @@ def _build_invoices_xlsx(_user_id):
 
 top_l, top_r = st.columns([5, 2])
 with top_r:
-    try:
+    _inv_xlsx_key = "_inv_xlsx_buf"
+    if st.session_state.get(_inv_xlsx_key):
         import datetime as _dt
-        _xlsx_data = _build_invoices_xlsx(_cpfr._uid())
         st.download_button(
-            "📊 匯出 Excel",
-            data=_xlsx_data,
+            "⬇️ 下載 Excel",
+            data=st.session_state[_inv_xlsx_key],
             file_name=(
                 f"單據紀錄_{_dt.datetime.now():%Y%m%d_%H%M%S}.xlsx"
             ),
@@ -60,8 +60,21 @@ with top_r:
             use_container_width=True,
             type="primary",
         )
-    except Exception as ex:
-        st.error(f"匯出失敗：{type(ex).__name__}: {ex}")
+    else:
+        if st.button("📊 準備匯出 Excel",
+                      use_container_width=True,
+                      type="primary"):
+            with st.spinner("📊 建立 Excel..."):
+                try:
+                    _data = _build_invoices_xlsx(_cpfr._uid())
+                    st.session_state[_inv_xlsx_key] = _data
+                    st.rerun()
+                except Exception as ex:
+                    import traceback
+                    st.error(
+                        f"匯出失敗：{type(ex).__name__}: {ex}\n\n"
+                        f"```\n{traceback.format_exc()[:500]}\n```"
+                    )
 
 # === 篩選器 ===
 fc1, fc2, fc3, fc4 = st.columns(4)

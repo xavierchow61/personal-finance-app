@@ -49,27 +49,44 @@ def _build_pf_xlsx(_user_id, period):
     return data
 
 
-exp_l, exp_c, exp_r = st.columns([3, 2, 2])
+exp_l, exp_c, exp_r = st.columns([2, 3, 2])
 with exp_c:
     period_in = st.text_input("📅 指定 period（選填，YYYY-MM）", "",
                                 placeholder="留空 = 全部")
 with exp_r:
-    try:
+    # Lazy build：只係用戶撳「準備匯出」先 build，避免每次 page render 都跑
+    st.markdown("&nbsp;", unsafe_allow_html=True)  # 對齊 label 高度
+    _pf_xlsx_key = f"_pf_xlsx_{period_in or 'all'}"
+    if st.session_state.get(_pf_xlsx_key):
+        # 已 build 好 → 顯示下載按鈕
         import datetime as _dt
-        _pf_data = _build_pf_xlsx(_cpfr._uid(),
-                                    period_in.strip() or None)
         ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         st.download_button(
-            "📊 匯出 Excel",
-            data=_pf_data,
+            "⬇️ 下載 Excel",
+            data=st.session_state[_pf_xlsx_key],
             file_name=f"個人記賬_{period_in or '全部'}_{ts}.xlsx",
             mime=("application/vnd.openxmlformats-officedocument."
                   "spreadsheetml.sheet"),
             use_container_width=True,
             type="primary",
         )
-    except Exception as ex:
-        st.error(f"匯出失敗：{type(ex).__name__}: {ex}")
+    else:
+        if st.button("📊 準備匯出 Excel",
+                      use_container_width=True,
+                      type="primary"):
+            with st.spinner("📊 建立 Excel..."):
+                try:
+                    _pf_data = _build_pf_xlsx(
+                        _cpfr._uid(),
+                        period_in.strip() or None)
+                    st.session_state[_pf_xlsx_key] = _pf_data
+                    st.rerun()
+                except Exception as ex:
+                    import traceback
+                    st.error(
+                        f"匯出失敗：{type(ex).__name__}: {ex}\n\n"
+                        f"```\n{traceback.format_exc()[:500]}\n```"
+                    )
 
 st.divider()
 
