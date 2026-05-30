@@ -696,6 +696,19 @@ def delete_payment_alias(alias_id: int):
         c.execute("DELETE FROM payment_aliases WHERE alias_id=?", (alias_id,))
 
 
+def update_payment_alias(alias_id: int, keyword: str,
+                         account_code: str,
+                         notes: str | None = None):
+    """按 ID 直接更新 alias（保留原 ID，避免 ON CONFLICT 嘅 new ID 副作用）"""
+    init_db()
+    with _conn() as c:
+        c.execute("""
+            UPDATE payment_aliases
+            SET keyword=?, account_code=?, notes=?
+            WHERE alias_id=?
+        """, (keyword.strip().lower(), account_code, notes, alias_id))
+
+
 def delete_all_payment_aliases() -> int:
     """清空所有付款方式對應 — 回傳刪除筆數"""
     init_db()

@@ -1472,118 +1472,261 @@ with tab2:
 
     aliases = pfdb.list_payment_aliases()
     if aliases:
-        df_al = pd.DataFrame([
-            {
-                "ID": a["alias_id"],
-                "關鍵字（部份匹配）": a["keyword"],
-                "對應帳戶": a["account_code"],
-                "備註": a.get("notes") or "",
-            }
-            for a in aliases
-        ])
-        sel = st.dataframe(df_al, hide_index=True,
-                            use_container_width=True,
-                            on_select="rerun",
-                            selection_mode="multi-row")
+        # === 批量編輯 toggle ===
+        _alias_bulk_edit = st.toggle(
+            "📝 批量編輯模式（可一次修改多條對應，最後按儲存）",
+            key="alias_bulk_edit_toggle",
+            help="開啟後可直接在表格內修改：關鍵字／對應帳戶／備註",
+        )
 
-        # 計算 selection 狀態（支援 0 / 1 / 多行）
-        _sel_rows = sel.selection.rows
-        _n_sel = len(_sel_rows)
-        _can_edit = (_n_sel == 1)
-        _sel_alias = aliases[_sel_rows[0]] if _can_edit else None
-        _sel_alias_ids = [aliases[i]["alias_id"] for i in _sel_rows]
+        # 帳戶選項（給對應帳戶欄用）
+        _accs_for_edit = pfdb.list_accounts(account_type="asset") + \
+                         pfdb.list_accounts(account_type="liability")
+        _acc_codes = [a["code"] for a in _accs_for_edit]
+
+        if _alias_bulk_edit:
+            # === 批量編輯模式 ===
+            bulk_df_al = pd.DataFrame([
+                {
+                    "ID": a["alias_id"],
+                    "關鍵字（部份匹配）": a["keyword"],
+                    "對應帳戶": a["account_code"],
+                    "備註": a.get("notes") or "",
+                }
+                for a in aliases
+            ])
+            edited_df_al = st.data_editor(
+                bulk_df_al,
+                hide_index=True,
+                use_container_width=True,
+                num_rows="fixed",
+                column_config={
+                    "ID": st.column_config.NumberColumn(disabled=True),
+                    "關鍵字（部份匹配）": st.column_config.TextColumn(
+                        required=True,
+                        help="會以 lowercase + LIKE 模糊匹配",
+                    ),
+                    "對應帳戶": st.column_config.SelectboxColumn(
+                        options=_acc_codes, required=True,
+                    ),
+                    "備註": st.column_config.TextColumn(),
+                },
+                key="alias_data_editor",
+            )
+
+            # 填入頂部按鈕區：儲存 + 取消
+            with _alias_action_bar:
+                sa1, sa2, _sa_spacer = st.columns([1, 1, 4])
+                with sa1:
+                    if st.button("💾 儲存全部變更",
+                                  type="primary",
+                                  use_container_width=True,
+                                  key="alias_bulk_save"):
+                        n_updated = 0
+                        errors = []
+                        for i in range(len(bulk_df_al)):
+                            orig = bulk_df_al.iloc[i]
+                            new = edited_df_al.iloc[i]
+                            kw_old = (orig["關鍵字（部份匹配）"] or "")\
+                                .strip().lower()
+                            kw_new = (new["關鍵字（部份匹配）"] or "")\
+                                .strip().lower()
+                            acc_old = orig["對應帳戶"]
+                            acc_new = new["對應帳戶"]
+                            nt_old = (orig["備註"] or "").strip()
+                            nt_new = (new["備註"] or "").strip()
+                            diff = (kw_old != kw_new
+                                    or acc_old != acc_new
+                                    or nt_old != nt_new)
+                            if not diff:
+                                continue
+                            if not kw_new:
+                                errors.append(
+                                    f"#{int(orig['ID'])}: 關鍵字不能為空"
+                                )
+                                continue
+                            try:
+                                pfdb.update_payment_alias(
+                                    int(orig["ID"]),
+                                    kw_new,
+                                    acc_new,
+                                    nt_new or None,
+                                )
+                                n_updated += 1
+                            except Exception as ex:
+                                errors.append(
+                                    f"#{int(orig['ID'])}: {ex}"
+                                )
+                        if errors:
+                            st.error(
+                                f"⚠️ 部分失敗：\n\n" +
+                                "\n\n".join(errors)
+                            )
+                        if n_updated > 0:
+                            st.toast(
+                                f"✅ 已更新 {n_updated} 條對應",
+                                icon="✅",
+                            )
+                            try:
+                                import cached_pfr
+                                cached_pfr.invalidate_all()
+                            except Exception:
+                                pass
+                            if "alias_bulk_edit_toggle" \
+                                    in st.session_state:
+                                del st.session_state[
+                                    "alias_bulk_edit_toggle"]
+                            st.rerun()
+                        elif not errors:
+                            st.info("ℹ️ 沒有資料變動")
+                with sa2:
+                    if st.button("❌ 取消編輯",
+                                  use_container_width=True,
+                                  key="alias_bulk_cancel"):
+                        if "alias_bulk_edit_toggle" \
+                                in st.session_state:
+                            del st.session_state[
+                                "alias_bulk_edit_toggle"]
+                        st.rerun()
+
+            st.caption(
+                "💡 想新增 / 刪除對應？請關閉批量編輯，"
+                "用頂部按鈕。"
+            )
+            # 早退 — 跳過下面嘅一般檢視 mode
+            _sel_rows = []
+            _n_sel = 0
+            _can_edit = False
+            _sel_alias = None
+            _sel_alias_ids = []
+        else:
+            # === 一般檢視模式 ===
+            df_al = pd.DataFrame([
+                {
+                    "ID": a["alias_id"],
+                    "關鍵字（部份匹配）": a["keyword"],
+                    "對應帳戶": a["account_code"],
+                    "備註": a.get("notes") or "",
+                }
+                for a in aliases
+            ])
+            sel = st.dataframe(df_al, hide_index=True,
+                                use_container_width=True,
+                                on_select="rerun",
+                                selection_mode="multi-row")
+
+            # 計算 selection 狀態（支援 0 / 1 / 多行）
+            _sel_rows = sel.selection.rows
+            _n_sel = len(_sel_rows)
+            _can_edit = (_n_sel == 1)
+            _sel_alias = aliases[_sel_rows[0]] if _can_edit else None
+            _sel_alias_ids = [
+                aliases[i]["alias_id"] for i in _sel_rows
+            ]
 
         # 頂部按鈕區：新增 + 編輯 + 刪除（選定 / 全部）
-        with _alias_action_bar:
-            if st.session_state.get("confirm_del_aliases"):
-                # 確認模式：警告 + 確定 / 取消
-                _del_ids = st.session_state.get(
-                    "confirm_del_aliases_ids") or []
-                _is_all = not _del_ids
-                if _is_all:
-                    st.warning(
-                        "⚠️ 確認要刪除「全部」對應？此動作無法復原"
-                    )
-                else:
-                    st.warning(
-                        f"⚠️ 確認要刪除選定的 {len(_del_ids)} 條對應？"
-                        f"此動作無法復原"
-                    )
-                cc1, cc2, _ccsp = st.columns([1, 1, 4])
-                if cc1.button("✅ 確定刪除", type="primary",
-                               key="do_del_aliases",
-                               use_container_width=True):
-                    try:
-                        if _is_all:
-                            n = pfdb.delete_all_payment_aliases()
-                        else:
-                            for _id in _del_ids:
-                                pfdb.delete_payment_alias(int(_id))
-                            n = len(_del_ids)
+        # 只喺非批量編輯模式時 render
+        if not _alias_bulk_edit:
+            with _alias_action_bar:
+                if st.session_state.get("confirm_del_aliases"):
+                    # 確認模式：警告 + 確定 / 取消
+                    _del_ids = st.session_state.get(
+                        "confirm_del_aliases_ids") or []
+                    _is_all = not _del_ids
+                    if _is_all:
+                        st.warning(
+                            "⚠️ 確認要刪除「全部」對應？"
+                            "此動作無法復原"
+                        )
+                    else:
+                        st.warning(
+                            f"⚠️ 確認要刪除選定的 {len(_del_ids)} "
+                            f"條對應？此動作無法復原"
+                        )
+                    cc1, cc2, _ccsp = st.columns([1, 1, 4])
+                    if cc1.button("✅ 確定刪除", type="primary",
+                                   key="do_del_aliases",
+                                   use_container_width=True):
+                        try:
+                            if _is_all:
+                                n = pfdb.delete_all_payment_aliases()
+                            else:
+                                for _id in _del_ids:
+                                    pfdb.delete_payment_alias(
+                                        int(_id))
+                                n = len(_del_ids)
+                            st.session_state[
+                                "confirm_del_aliases"] = False
+                            st.session_state[
+                                "confirm_del_aliases_ids"] = None
+                            st.toast(
+                                f"🗑️ 已刪除 {n} 條對應", icon="🗑️")
+                            try:
+                                import cached_pfr
+                                cached_pfr.invalidate_all()
+                            except Exception:
+                                pass
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"刪除失敗：{ex}")
+                    if cc2.button("❌ 取消",
+                                   key="cancel_del_aliases",
+                                   use_container_width=True):
                         st.session_state[
                             "confirm_del_aliases"] = False
                         st.session_state[
                             "confirm_del_aliases_ids"] = None
-                        st.toast(f"🗑️ 已刪除 {n} 條對應", icon="🗑️")
-                        try:
-                            import cached_pfr
-                            cached_pfr.invalidate_all()
-                        except Exception:
-                            pass
                         st.rerun()
-                    except Exception as ex:
-                        st.error(f"刪除失敗：{ex}")
-                if cc2.button("❌ 取消",
-                               key="cancel_del_aliases",
-                               use_container_width=True):
-                    st.session_state["confirm_del_aliases"] = False
-                    st.session_state[
-                        "confirm_del_aliases_ids"] = None
-                    st.rerun()
-            else:
-                # 一般模式：3 個按鈕並排
-                ab1, ab2, ab3, _ab_spacer = st.columns([1, 1, 1, 3])
-                with ab1:
-                    if st.button("➕ 新增對應",
-                                  use_container_width=True,
-                                  key="open_new_alias_dlg"):
-                        _alias_dialog("new")
-                with ab2:
-                    # 編輯只支援單行
-                    if _can_edit:
-                        _lbl = (
-                            f"✏️ 編輯：{_sel_alias['keyword']} → "
-                            f"{_sel_alias['account_code']}"
-                        )
-                    elif _n_sel == 0:
-                        _lbl = "✏️ 編輯（請先選一行）"
-                    else:
-                        _lbl = f"✏️ 編輯（已選 {_n_sel} 行，僅支援單行）"
-                    if st.button(
-                        _lbl, use_container_width=True,
-                        disabled=not _can_edit,
-                        key="open_edit_alias_dlg",
-                    ):
-                        if _sel_alias:
-                            _alias_dialog("edit", _sel_alias)
-                with ab3:
-                    # 刪除按鈕：智能切換
-                    if _n_sel > 0:
-                        _del_lbl = f"🗑️ 刪除選定（{_n_sel} 行）"
-                        _del_ids_payload = _sel_alias_ids
-                    else:
-                        _del_lbl = "🗑️ 全部刪除"
-                        _del_ids_payload = []
-                    if st.button(_del_lbl,
-                                  type="secondary",
-                                  use_container_width=True,
-                                  key="ask_del_aliases"):
-                        st.session_state[
-                            "confirm_del_aliases"] = True
-                        st.session_state[
-                            "confirm_del_aliases_ids"] = \
-                            _del_ids_payload
-                        st.rerun()
+                else:
+                    # 一般模式：3 個按鈕並排
+                    ab1, ab2, ab3, _ab_spacer = st.columns(
+                        [1, 1, 1, 3])
+                    with ab1:
+                        if st.button("➕ 新增對應",
+                                      use_container_width=True,
+                                      key="open_new_alias_dlg"):
+                            _alias_dialog("new")
+                    with ab2:
+                        # 編輯只支援單行
+                        if _can_edit:
+                            _lbl = (
+                                f"✏️ 編輯：{_sel_alias['keyword']}"
+                                f" → {_sel_alias['account_code']}"
+                            )
+                        elif _n_sel == 0:
+                            _lbl = "✏️ 編輯（請先選一行）"
+                        else:
+                            _lbl = (
+                                f"✏️ 編輯（已選 {_n_sel} 行，"
+                                f"僅支援單行）"
+                            )
+                        if st.button(
+                            _lbl, use_container_width=True,
+                            disabled=not _can_edit,
+                            key="open_edit_alias_dlg",
+                        ):
+                            if _sel_alias:
+                                _alias_dialog("edit", _sel_alias)
+                    with ab3:
+                        # 刪除按鈕：智能切換
+                        if _n_sel > 0:
+                            _del_lbl = (
+                                f"🗑️ 刪除選定（{_n_sel} 行）"
+                            )
+                            _del_ids_payload = _sel_alias_ids
+                        else:
+                            _del_lbl = "🗑️ 全部刪除"
+                            _del_ids_payload = []
+                        if st.button(_del_lbl,
+                                      type="secondary",
+                                      use_container_width=True,
+                                      key="ask_del_aliases"):
+                            st.session_state[
+                                "confirm_del_aliases"] = True
+                            st.session_state[
+                                "confirm_del_aliases_ids"] = \
+                                _del_ids_payload
+                            st.rerun()
     else:
         # 表格為空時只填新增按鈕
         with _alias_action_bar:
