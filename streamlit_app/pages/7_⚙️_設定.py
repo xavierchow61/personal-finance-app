@@ -302,96 +302,192 @@ with tab_acc:
         key="acc_show_inactive",
     )
 
-    # === 新增帳戶（小按鈕 popover）===
-    _btn_col, _spacer = st.columns([1, 5])
-    with _btn_col:
-        _new_acc_popover = st.popover(
-            "➕ 新增帳戶", use_container_width=True,
-        )
-    with _new_acc_popover:
-        # 用未過濾嘅完整列表做父帳戶候選（避免 dropdown 空）
-        _all_for_parent = pfdb.list_accounts(active_only=True)
-        with st.form("new_acc"):
-            nc1, nc2 = st.columns(2)
-            with nc1:
-                na_code = st.text_input(
+    # === 統一帳戶表單 dialog（新增 + 編輯共用同一彈窗）===
+    CURRENCIES = ["HKD", "USD", "JPY", "CNY", "EUR",
+                   "GBP", "AUD", "SGD", "TWD"]
+
+    @st.dialog("帳戶資料", width="large")
+    def _account_dialog(mode: str, acc: dict | None = None):
+        """mode = 'new' or 'edit'"""
+        is_edit = mode == "edit"
+        st.caption("✏️ 修改現有帳戶" if is_edit else "➕ 建立新帳戶")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if is_edit:
+                st.text_input("帳戶代碼", value=acc["code"], disabled=True)
+                code_val = acc["code"]
+            else:
+                code_val = st.text_input(
                     "帳戶代碼（英文 / 底線，建立後不能改）",
                     placeholder="例：ZA_BANK / CITI_VISA / FOOD",
                 )
-                na_name = st.text_input(
-                    "顯示名稱",
-                    placeholder="例：ZA Bank / Citi Visa / 餐飲",
+            name_val = st.text_input(
+                "顯示名稱",
+                value=acc["name"] if is_edit else "",
+                placeholder="例：ZA Bank / Citi Visa / 餐飲",
+            )
+            if is_edit:
+                type_code = acc["account_type"]
+                st.text_input(
+                    "帳戶類型（不能改）",
+                    value=ACCOUNT_TYPE_LABELS.get(type_code, type_code),
+                    disabled=True,
                 )
-                na_type_label = st.selectbox(
-                    "帳戶類型",
-                    list(ACCOUNT_TYPE_LABELS.values()),
+            else:
+                type_label = st.selectbox(
+                    "帳戶類型", list(ACCOUNT_TYPE_LABELS.values()),
                 )
-                na_type = next(
+                type_code = next(
                     (k for k, v in ACCOUNT_TYPE_LABELS.items()
-                     if v == na_type_label), "asset")
-            with nc2:
-                na_icon = st.text_input(
-                    "圖示 emoji（選填）",
-                    placeholder="例：🏦 💳 🛒",
-                )
-                na_opening = st.number_input(
-                    "期初餘額", value=0.0, format="%.2f",
-                )
-                na_currency = st.selectbox(
-                    "幣別",
-                    ["HKD", "USD", "JPY", "CNY", "EUR",
-                      "GBP", "AUD", "SGD", "TWD"],
-                )
-            # 父帳戶（樹狀結構）— 用完整列表
-            same_type_candidates = [
-                a for a in _all_for_parent
-                if a["account_type"] == na_type
-            ]
-            parent_opts = ["（無 — 頂層帳戶）"] + [
-                f"{a.get('icon') or ''} {a['name']} ({a['code']})"
-                for a in same_type_candidates
-            ]
-            na_parent_sel = st.selectbox(
-                "🌳 父帳戶（選填，將此帳戶歸類在某帳戶之下）",
-                parent_opts,
-                help="例：建立「Mox 信用卡」時揀父帳戶 = Mox Bank",
+                     if v == type_label), "asset")
+        with c2:
+            icon_val = st.text_input(
+                "圖示 emoji（選填）",
+                value=(acc.get("icon") or "") if is_edit else "",
+                placeholder="例：🏦 💳 🛒",
             )
-            na_parent = (
-                same_type_candidates[
-                    parent_opts.index(na_parent_sel) - 1
-                ]["code"]
-                if na_parent_sel != parent_opts[0] else None
+            opening_val = st.number_input(
+                "期初餘額",
+                value=(float(acc.get("opening_balance") or 0)
+                       if is_edit else 0.0),
+                format="%.2f",
             )
-            na_notes = st.text_input("備註（選填）", "")
+            cur_currency = (acc.get("currency") or "HKD") if is_edit else "HKD"
+            curr_idx = (CURRENCIES.index(cur_currency)
+                        if cur_currency in CURRENCIES else 0)
+            currency_val = st.selectbox(
+                "幣別", CURRENCIES, index=curr_idx,
+            )
 
-            if st.form_submit_button(
-                    "✨ 建立帳戶", type="primary",
-                    use_container_width=True):
-                if not na_code.strip():
-                    st.error("代碼不能為空")
-                elif not na_name.strip():
-                    st.error("名稱不能為空")
-                elif pfdb.get_account(na_code.strip().upper()):
-                    st.error(f"代碼「{na_code}」已存在")
+        # 父帳戶（用完整 active list，剔除自己）
+        _all = pfdb.list_accounts(active_only=True)
+        same_type = [
+            a for a in _all
+            if a["account_type"] == type_code
+            and (not is_edit or a["code"] != code_val)
+        ]
+        parent_opts = ["（無 — 頂層帳戶）"] + [
+            f"{a.get('icon') or ''} {a['name']} ({a['code']})"
+            for a in same_type
+        ]
+        cur_parent_idx = 0
+        if is_edit and acc.get("parent_code"):
+            for i, a in enumerate(same_type, start=1):
+                if a["code"] == acc["parent_code"]:
+                    cur_parent_idx = i
+                    break
+        sel_parent = st.selectbox(
+            "🌳 父帳戶（選填，將此帳戶歸類在某帳戶之下）",
+            parent_opts, index=cur_parent_idx,
+            help="例：Mox 信用卡 / Mox 保險 → 父帳戶 = Mox Bank",
+        )
+        parent_val = (
+            same_type[parent_opts.index(sel_parent) - 1]["code"]
+            if sel_parent != parent_opts[0] else None
+        )
+
+        # 編輯模式專用欄位
+        if is_edit:
+            sc1, sc2 = st.columns(2)
+            sort_val = sc1.number_input(
+                "排序（小→大）",
+                value=int(acc.get("sort_order") or 0), step=1,
+            )
+            active_val = sc2.checkbox(
+                "啟用此帳戶",
+                value=bool(acc.get("is_active")),
+            )
+        else:
+            sort_val = 0
+            active_val = True
+
+        notes_val = st.text_area(
+            "備註",
+            value=(acc.get("notes") or "") if is_edit else "",
+        )
+
+        st.divider()
+        if is_edit:
+            bc1, bc2 = st.columns(2)
+            save_btn = bc1.button(
+                "💾 儲存修改", type="primary",
+                use_container_width=True, key="dlg_save_edit",
+            )
+            del_btn = bc2.button(
+                "🗑️ 刪除帳戶", type="secondary",
+                use_container_width=True, key="dlg_del",
+            )
+        else:
+            save_btn = st.button(
+                "✨ 建立帳戶", type="primary",
+                use_container_width=True, key="dlg_create",
+            )
+            del_btn = False
+
+        if save_btn:
+            code_final = (code_val if is_edit
+                          else code_val.strip().upper())
+            if not code_final:
+                st.error("代碼不能為空")
+                return
+            if not name_val.strip():
+                st.error("名稱不能為空")
+                return
+            if (not is_edit) and pfdb.get_account(code_final):
+                st.error(f"代碼「{code_final}」已存在")
+                return
+            try:
+                pfdb.upsert_account(
+                    code=code_final,
+                    name=name_val.strip(),
+                    account_type=type_code,
+                    opening_balance=opening_val,
+                    currency=currency_val,
+                    sort_order=sort_val,
+                    icon=icon_val or None,
+                    notes=notes_val or None,
+                    parent_code=parent_val,
+                )
+                if is_edit:
+                    from personal_finance import db as _pfdb
+                    with _pfdb._conn() as _c:
+                        _c.execute(
+                            "UPDATE accounts "
+                            "SET is_active=? WHERE code=?",
+                            (1 if active_val else 0, code_final),
+                        )
+                    st.success(f"✅ 已更新 {code_final}")
                 else:
-                    try:
-                        pfdb.upsert_account(
-                            code=na_code.strip().upper(),
-                            name=na_name.strip(),
-                            account_type=na_type,
-                            opening_balance=na_opening,
-                            currency=na_currency,
-                            icon=na_icon or None,
-                            notes=na_notes or None,
-                            parent_code=na_parent,
-                        )
-                        st.success(
-                            f"✅ 建立成功：{na_icon or ''} {na_name} "
-                            f"({na_code.upper()})"
-                        )
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(f"建立失敗：{ex}")
+                    st.success(
+                        f"✅ 建立成功：{icon_val or ''} "
+                        f"{name_val} ({code_final})"
+                    )
+                st.rerun()
+            except Exception as ex:
+                st.error(
+                    f"{'更新' if is_edit else '建立'}失敗：{ex}"
+                )
+
+        if del_btn:
+            try:
+                pfdb.delete_account(code_val)
+                st.success(f"已刪除 {code_val}")
+                st.rerun()
+            except Exception as ex:
+                st.error(
+                    f"❌ 刪除失敗（可能有分錄關聯）：\n\n"
+                    f"{ex}\n\n"
+                    f"💡 建議改為「停用」（取消勾選"
+                    f"「啟用此帳戶」）。"
+                )
+
+    # === 觸發按鈕：新增 ===
+    _btn_col, _spacer = st.columns([1, 5])
+    with _btn_col:
+        if st.button("➕ 新增帳戶", use_container_width=True,
+                      key="open_new_acc_dlg"):
+            _account_dialog("new")
 
     st.divider()
 
@@ -463,133 +559,19 @@ with tab_acc:
             },
         )
 
-        # === 編輯選定帳戶 ===
+        # === 編輯選定帳戶（觸發同一個 dialog）===
         if sel_acc.selection.rows:
             sel_code = df_acc.iloc[sel_acc.selection.rows[0]]["代碼"]
             acc = pfdb.get_account(sel_code)
             if acc:
-                st.divider()
-                with st.expander(
-                    f"✏️ 編輯帳戶：{acc.get('icon') or ''} "
-                    f"{acc['name']} ({acc['code']})",
-                    expanded=True,
-                ):
-                    with st.form(f"edit_acc_{sel_code}"):
-                        ec1, ec2 = st.columns(2)
-                        with ec1:
-                            new_name = st.text_input(
-                                "顯示名稱", acc.get("name", ""))
-                            new_icon = st.text_input(
-                                "圖示 emoji（選填）",
-                                acc.get("icon") or "",
-                                placeholder="例：🏦 💳 🛒")
-                            new_currency = st.selectbox(
-                                "幣別",
-                                ["HKD", "USD", "JPY", "CNY", "EUR",
-                                  "GBP", "AUD", "SGD", "TWD"],
-                                index=(["HKD", "USD", "JPY", "CNY",
-                                        "EUR", "GBP", "AUD", "SGD",
-                                        "TWD"].index(
-                                    acc.get("currency") or "HKD")
-                                    if (acc.get("currency") or "HKD")
-                                       in ["HKD", "USD", "JPY", "CNY",
-                                           "EUR", "GBP", "AUD", "SGD",
-                                           "TWD"] else 0),
-                            )
-                        with ec2:
-                            new_opening = st.number_input(
-                                "期初餘額",
-                                value=float(acc.get(
-                                    "opening_balance") or 0),
-                                format="%.2f",
-                            )
-                            new_sort = st.number_input(
-                                "排序（小→大）",
-                                value=int(acc.get("sort_order") or 0),
-                                step=1,
-                            )
-                            new_active = st.checkbox(
-                                "啟用此帳戶",
-                                value=bool(acc.get("is_active")),
-                            )
-                        # 父帳戶 selectbox（同類型嘅 accounts 可以做 parent，自己除外）
-                        same_type_accs = [
-                            a for a in all_accs
-                            if a["account_type"] == acc["account_type"]
-                            and a["code"] != sel_code
-                        ]
-                        parent_options = ["（無 — 頂層帳戶）"] + [
-                            f"{a.get('icon') or ''} {a['name']} ({a['code']})"
-                            for a in same_type_accs
-                        ]
-                        cur_parent = acc.get("parent_code")
-                        cur_parent_idx = 0
-                        if cur_parent:
-                            for i, a in enumerate(same_type_accs, start=1):
-                                if a["code"] == cur_parent:
-                                    cur_parent_idx = i
-                                    break
-                        sel_parent = st.selectbox(
-                            "🌳 父帳戶（將此帳戶歸類在某個帳戶之下）",
-                            parent_options,
-                            index=cur_parent_idx,
-                            help="例：Mox 信用卡 / Mox 保險 → 父帳戶 = Mox Bank",
-                        )
-                        new_parent = (
-                            same_type_accs[
-                                parent_options.index(sel_parent) - 1
-                            ]["code"]
-                            if sel_parent != parent_options[0] else None
-                        )
-
-                        new_notes = st.text_area(
-                            "備註", acc.get("notes") or "")
-
-                        bcol1, bcol2 = st.columns(2)
-                        if bcol1.form_submit_button(
-                                "💾 儲存", type="primary",
-                                use_container_width=True):
-                            try:
-                                pfdb.upsert_account(
-                                    code=sel_code,
-                                    name=new_name,
-                                    account_type=acc["account_type"],
-                                    opening_balance=new_opening,
-                                    currency=new_currency,
-                                    sort_order=new_sort,
-                                    icon=new_icon or None,
-                                    notes=new_notes or None,
-                                    parent_code=new_parent,
-                                )
-                                # 處理 is_active（upsert 無此欄位，
-                                # 直接 raw SQL）
-                                from personal_finance import db as _pfdb
-                                with _pfdb._conn() as _c:
-                                    _c.execute(
-                                        "UPDATE accounts "
-                                        "SET is_active=? WHERE code=?",
-                                        (1 if new_active else 0,
-                                         sel_code),
-                                    )
-                                st.success(f"✅ 已更新 {sel_code}")
-                                st.rerun()
-                            except Exception as ex:
-                                st.error(f"更新失敗：{ex}")
-
-                        if bcol2.form_submit_button(
-                                "🗑️ 刪除", type="secondary",
-                                use_container_width=True):
-                            try:
-                                pfdb.delete_account(sel_code)
-                                st.success(f"已刪除 {sel_code}")
-                                st.rerun()
-                            except Exception as ex:
-                                st.error(
-                                    f"❌ 刪除失敗（可能有分錄關聯）：\n\n"
-                                    f"{ex}\n\n"
-                                    f"💡 建議改為「停用」（取消勾選"
-                                    f"「啟用此帳戶」）。"
-                                )
+                _ebtn_col, _ebtn_spacer = st.columns([1, 5])
+                with _ebtn_col:
+                    if st.button(
+                        f"✏️ 編輯：{acc.get('icon') or ''}{acc['name']}",
+                        use_container_width=True,
+                        key=f"open_edit_dlg_{sel_code}",
+                    ):
+                        _account_dialog("edit", acc)
     else:
         st.info("尚無符合條件的帳戶。")
 
