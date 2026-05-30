@@ -402,6 +402,115 @@ def init_dbs():
         )
 
 
+def cascade_account_picker(
+    label: str,
+    default_code: str | None = None,
+    account_types: list[str] | None = None,
+    key_prefix: str = "cascade_acc",
+):
+    """兩級級聯帳戶選擇：先父帳戶 → 再子帳戶（或父本身）。
+
+    Args:
+        label: 顯示前綴（會自動加「父帳戶」/「子帳戶」）
+        default_code: 預設選中嘅 account code
+        account_types: 過濾，例：["asset", "liability"]；None = 全部
+        key_prefix: session_state key 前綴（多個 picker 要唔同）
+
+    Returns:
+        Selected account code (str) or None if 無可用帳戶
+    """
+    import cached_pfr as cpfr
+
+    if account_types:
+        all_accs = []
+        for t in account_types:
+            all_accs.extend(
+                cpfr.list_accounts(active_only=True, account_type=t))
+    else:
+        all_accs = cpfr.list_accounts(active_only=True)
+
+    if not all_accs:
+        st.warning("⚠️ 無可用帳戶")
+        return None
+
+    code_set = {a["code"] for a in all_accs}
+    top_level = [
+        a for a in all_accs
+        if not a.get("parent_code") or a["parent_code"] not in code_set
+    ]
+    children_of = {}
+    for a in all_accs:
+        pc = a.get("parent_code")
+        if pc and pc in code_set:
+            children_of.setdefault(pc, []).append(a)
+    top_level.sort(key=lambda x: (
+        x["account_type"], x.get("sort_order") or 0, x["name"]))
+
+    # 揾 default 嘅父
+    default_parent_code = None
+    default_acc = next(
+        (a for a in all_accs if a["code"] == default_code), None)
+    if default_acc:
+        pc = default_acc.get("parent_code")
+        default_parent_code = (
+            pc if pc and pc in code_set else default_code)
+
+    # === Step 1: 父帳戶 dropdown ===
+    p_labels = [
+        f"{a.get('icon') or ''} {a['name']} ({a['code']})"
+        for a in top_level
+    ]
+    p_code_by_label = {p_labels[i]: top_level[i]["code"]
+                        for i in range(len(top_level))}
+    p_default_idx = 0
+    if default_parent_code:
+        for i, a in enumerate(top_level):
+            if a["code"] == default_parent_code:
+                p_default_idx = i
+                break
+
+    sel_p_label = st.selectbox(
+        f"{label}（父帳戶）",
+        p_labels, index=p_default_idx,
+        key=f"{key_prefix}_p",
+    )
+    sel_p_code = p_code_by_label[sel_p_label]
+    sel_p_acc = next(a for a in top_level if a["code"] == sel_p_code)
+    children = sorted(
+        children_of.get(sel_p_code, []),
+        key=lambda x: (x.get("sort_order") or 0, x["name"]),
+    )
+
+    # === Step 2: 子帳戶 dropdown（或自動使用父）===
+    if not children:
+        st.caption("✅ 此帳戶無子帳戶，直接使用")
+        return sel_p_code
+
+    c_labels = [
+        f"🔑 {sel_p_acc.get('icon') or ''} {sel_p_acc['name']}"
+        f"（父帳戶本身）"
+    ]
+    c_code_by_label = {c_labels[0]: sel_p_code}
+    for c in children:
+        lbl = f"　└ {c.get('icon') or ''} {c['name']} ({c['code']})"
+        c_labels.append(lbl)
+        c_code_by_label[lbl] = c["code"]
+
+    c_default_idx = 0
+    if default_code:
+        for i, lbl in enumerate(c_labels):
+            if c_code_by_label[lbl] == default_code:
+                c_default_idx = i
+                break
+
+    sel_c_label = st.selectbox(
+        f"{label}（子帳戶 / 自己）",
+        c_labels, index=c_default_idx,
+        key=f"{key_prefix}_c",
+    )
+    return c_code_by_label[sel_c_label]
+
+
 def check_api_key():
     """如果尚未設定 Gemini API key 則顯示警告"""
     import config
@@ -417,6 +526,7 @@ def check_api_key():
 __all__ = [
     "C", "PALETTE",
     "app_header", "kpi_card", "init_dbs", "check_api_key",
+    "cascade_account_picker",
     "glass_card_open", "glass_card_close", "plotly_glass_layout",
     "render_subpage_nav", "SUBPAGE_GROUPS",
 ]

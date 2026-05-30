@@ -93,18 +93,14 @@ with tab1:
                 f"${sel_inv.get('total_amount', 0):,.2f}）"
             )
 
-            # 選擇收款帳戶
-            asset_accs = _asset_accs   # 用 bundle 資料
-            asset_opts = {
-                f"{a.get('icon') or ''} {a['name']} ({a['code']})": a["code"]
-                for a in asset_accs
-            }
-
+            # 選擇收款帳戶（級聯：父 → 子）
+            from streamlit_app._common import cascade_account_picker
             rc1, rc2 = st.columns([2, 1])
             with rc1:
-                acc_label = st.selectbox(
-                    "💳 收款入哪個帳戶？", list(asset_opts.keys()),
-                    key=f"ar_acc_{sel_id}",
+                st.markdown("**💳 收款入哪個帳戶？**")
+                received_acc_code = cascade_account_picker(
+                    "收款", account_types=["asset"],
+                    key_prefix=f"ar_acc_{sel_id}",
                 )
             with rc2:
                 from datetime import date as _d
@@ -113,22 +109,24 @@ with tab1:
 
             if st.button("✅ 確認收款並入賬", type="primary",
                          key=f"ar_btn_{sel_id}"):
-                try:
-                    # 1. Post 收款分錄（Dr Asset / Cr AR_REIMBURSE）
-                    receive_id = pfpost.mark_reimbursement_received(
-                        invoice_id=sel_id,
-                        received_account=asset_opts[acc_label],
-                        received_date=rec_date.isoformat(),
-                    )
-                    # 2. 標記 invoice 為已報銷
-                    invdb.toggle_reimbursed(sel_id)
-                    st.success(
-                        f"✅ 已收款並入賬！分錄 #{receive_id} "
-                        f"（Dr {asset_opts[acc_label]} / Cr AR_REIMBURSE）"
-                    )
-                    st.rerun()
-                except Exception as ex:
-                    st.error(f"❌ 收款失敗：{ex}")
+                if not received_acc_code:
+                    st.error("請選擇收款帳戶")
+                else:
+                    try:
+                        receive_id = pfpost.mark_reimbursement_received(
+                            invoice_id=sel_id,
+                            received_account=received_acc_code,
+                            received_date=rec_date.isoformat(),
+                        )
+                        invdb.toggle_reimbursed(sel_id)
+                        st.success(
+                            f"✅ 已收款並入賬！分錄 #{receive_id} "
+                            f"（Dr {received_acc_code} "
+                            f"/ Cr AR_REIMBURSE）"
+                        )
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"❌ 收款失敗：{ex}")
 
 # === Tab 2：已收款歷史 ===
 with tab2:

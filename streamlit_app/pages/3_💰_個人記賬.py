@@ -147,34 +147,44 @@ with tab3:
     st.subheader("➕ 新增手動分錄")
     st.caption("例如：薪金、帳戶轉移、信用卡還款")
 
-    accs = pfdb.list_accounts(active_only=True)
-    opts = {f"{a['code']} - {a['name']}": a["code"] for a in accs}
+    from streamlit_app._common import cascade_account_picker
 
     from datetime import date as _d
     me1, me2 = st.columns(2)
     with me1:
         edate = st.date_input("日期", _d.today())
         amount = st.number_input("金額", value=0.0, format="%.2f")
-        from_acc = st.selectbox("借方帳戶（Dr）", list(opts.keys()))
+        st.markdown("**借方帳戶（Dr）**")
+        from_acc_code = cascade_account_picker(
+            "借方", key_prefix="entry_dr",
+        )
     with me2:
         desc = st.text_input("說明", "")
         currency = st.selectbox("幣別",
                                  ["HKD", "USD", "JPY", "CNY", "EUR", "GBP"],
                                  index=0)
-        to_acc = st.selectbox("貸方帳戶（Cr）", list(opts.keys()))
+        st.markdown("**貸方帳戶（Cr）**")
+        to_acc_code = cascade_account_picker(
+            "貸方", key_prefix="entry_cr",
+        )
 
     if st.button("💾 寫入分錄", type="primary"):
         if amount <= 0:
             st.error("金額必須大於零")
+        elif not from_acc_code or not to_acc_code:
+            st.error("請選擇借方與貸方帳戶")
+        elif from_acc_code == to_acc_code:
+            st.error("借方與貸方不能是同一帳戶")
         else:
             try:
                 eid = pfdb.create_entry(
                     entry_date=edate.isoformat(),
-                    description=desc or f"手動分錄：{from_acc} → {to_acc}",
+                    description=desc or
+                        f"手動分錄：{from_acc_code} → {to_acc_code}",
                     lines=[
-                        {"account_code": opts[from_acc],
+                        {"account_code": from_acc_code,
                          "debit": amount, "credit": 0},
-                        {"account_code": opts[to_acc],
+                        {"account_code": to_acc_code,
                          "debit": 0, "credit": amount},
                     ],
                     currency=currency,

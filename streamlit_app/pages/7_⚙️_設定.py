@@ -1371,15 +1371,6 @@ with tab2:
         st.caption("✏️ 修改現有對應" if is_edit
                    else "➕ 新增付款方式對應")
 
-        _accs = cpfr.list_accounts(account_type="asset") + \
-                cpfr.list_accounts(account_type="liability")
-        _acc_opts = {
-            f"{a.get('icon') or ''} {a['name']} ({a['code']})":
-                a["code"]
-            for a in _accs
-        }
-        _opt_list = list(_acc_opts.keys())
-
         cur_kw = alias["keyword"] if is_edit else ""
         cur_code = alias["account_code"] if is_edit else None
         cur_notes = (alias.get("notes") or "") if is_edit else ""
@@ -1390,14 +1381,13 @@ with tab2:
             value=cur_kw,
             placeholder="例：PayMe / HSBC / Visa",
         )
-        cur_label = next(
-            (lbl for lbl, c in _acc_opts.items() if c == cur_code),
-            None,
-        )
-        cur_idx = (_opt_list.index(cur_label)
-                   if cur_label in _opt_list else 0)
-        new_acc_label = st.selectbox(
-            "對應到帳戶", _opt_list, index=cur_idx,
+        # 級聯帳戶選擇：父 → 子
+        from streamlit_app._common import cascade_account_picker
+        st.markdown("**對應到帳戶**")
+        new_acc_code = cascade_account_picker(
+            "對應", default_code=cur_code,
+            account_types=["asset", "liability"],
+            key_prefix="alias_dlg_acc",
         )
         new_notes_val = st.text_input(
             "備註（選填）", value=cur_notes,
@@ -1426,25 +1416,28 @@ with tab2:
             if not new_kw_s:
                 st.error("關鍵字不能為空")
                 return
+            if not new_acc_code:
+                st.error("請選擇對應帳戶")
+                return
             try:
                 # 編輯時如關鍵字有改 → 先刪除舊的
                 if is_edit and new_kw_s.lower() != cur_kw.lower():
                     pfdb.delete_payment_alias(cur_id)
                 pfdb.add_payment_alias(
                     new_kw_s,
-                    _acc_opts[new_acc_label],
+                    new_acc_code,
                     new_notes_val or None,
                 )
                 if is_edit:
                     st.toast(
                         f"✅ 已更新：{new_kw_s} → "
-                        f"{_acc_opts[new_acc_label]}",
+                        f"{new_acc_code}",
                         icon="✅",
                     )
                 else:
                     st.toast(
                         f"✨ 新增：{new_kw_s} → "
-                        f"{_acc_opts[new_acc_label]}",
+                        f"{new_acc_code}",
                         icon="🎉",
                     )
                 try:
