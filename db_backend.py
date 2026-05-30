@@ -41,6 +41,51 @@ IS_POSTGRES = bool(DATABASE_URL)
 
 
 # ============================================================
+# PER-USER SCHEMA ISOLATION（PostgreSQL only）
+# 每個用戶用獨立 PG schema 隔離資料，避免互相睇到對方資料
+# ============================================================
+
+def _sanitize_schema_name(raw: str) -> str:
+    """將任意 user id / email 轉為合法 PG identifier"""
+    if not raw:
+        return ""
+    # 只保留 a-z 0-9 _，其餘變 _，總長度限制 50
+    safe = re.sub(r"[^a-zA-Z0-9_]", "_", raw.lower())
+    safe = re.sub(r"_+", "_", safe).strip("_")
+    return f"user_{safe[:50]}" if safe else ""
+
+
+def _current_user_schema() -> str | None:
+    """取得當前登入用戶嘅專屬 schema 名稱。
+
+    從 Streamlit session 攞 auth_user，
+    回傳「user_<id>」或「user_<email_local>」格式。
+    冇 user / 唔係 PG 模式 → return None（用 public schema）
+    """
+    if not IS_POSTGRES:
+        return None
+    try:
+        import streamlit as st
+        user = st.session_state.get("auth_user")
+        if not user:
+            return None
+        # 支援 dict (Supabase) 或 str (舊版)
+        if isinstance(user, dict):
+            raw = user.get("id") or user.get("email") or ""
+            if "@" in raw:
+                raw = raw.split("@")[0]
+        else:
+            raw = str(user)
+        return _sanitize_schema_name(raw)
+    except Exception:
+        return None
+
+
+# 已初始化過 schema 嘅集合（避免每次 connect 都 CREATE SCHEMA）
+_INITIALIZED_SCHEMAS: set[str] = set()
+
+
+# ============================================================
 # SQL ADAPTER（SQLite → PostgreSQL 翻譯）
 # ============================================================
 
@@ -302,6 +347,32 @@ def get_conn(sqlite_path: str | Path):
             autocommit=False,
             connect_timeout=20,
         )
+
+        # === 設 search_path 到當前用戶嘅專屬 schema ===
+        user_schema = _current_user_schema()
+        if user_schema:
+            cur = con.cursor()
+            # 首次見呢個 schema → CREATE IF NOT EXISTS
+            if user_schema not in _INITIALIZED_SCHEMAS:
+                try:
+                    cur.execute(
+                        f'CREATE SCHEMA IF NOT EXISTS "{user_schema}"')
+                    con.commit()
+                    _INITIALIZED_SCHEMAS.add(user_schema)
+                except Exception as ex:
+                    con.rollback()
+                    # 唔阻 connection；嚴重錯誤會喺 query 時冒出
+                    print(f"[db_backend] CREATE SCHEMA failed: {ex}")
+            # 每次 connect 都要 set search_path（per-session）
+            try:
+                cur.execute(
+                    f'SET search_path TO "{user_schema}", public')
+                con.commit()
+            except Exception as ex:
+                con.rollback()
+                print(f"[db_backend] SET search_path failed: {ex}")
+            cur.close()
+
         adapter = PgConnAdapter(con)
         try:
             yield adapter

@@ -68,15 +68,19 @@ def _column_exists(con, table: str, column: str) -> bool:
         return column in cols
 
 
-_INIT_DONE = False
+_INIT_DONE_SCHEMAS: set[str] = set()
 
 
 def init_db(force: bool = False):
-    """初始化 schema。已執行過則跳過（PG 嚟講避免重複 round trip）"""
-    global _INIT_DONE
-    if _INIT_DONE and not force:
+    """初始化 schema。已執行過則跳過（PG 嚟講避免重複 round trip）
+
+    PG 多用戶模式下：每個 user schema 分開追蹤
+    """
+    from db_backend import _current_user_schema
+    schema_key = _current_user_schema() or "_default"
+    if schema_key in _INIT_DONE_SCHEMAS and not force:
         return
-    _INIT_DONE = True   # 提前 set 避免 recursive call
+    _INIT_DONE_SCHEMAS.add(schema_key)   # 提前 set 避免 recursive call
     with _conn() as con:
         # 1. 確保 table 存在（舊版可能冇新 column）
         con.execute(CREATE_TABLE)

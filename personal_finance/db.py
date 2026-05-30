@@ -241,18 +241,20 @@ def _safe_add_column(con, table: str, column: str, defn: str):
                 pass
 
 
-_INIT_DONE = False
+_INIT_DONE_SCHEMAS: set[str] = set()
 
 
 def init_db(force: bool = False):
     """初始化 schema。已執行過則跳過（除非 force=True）。
 
-    對 PG 而言，此 cache 重要：避免每次 CRUD 都執行 schema 檢查。
+    PG 多用戶模式下：每個 user schema 分開追蹤
+    （避免 user A 嘅 init 影響 user B 嘅 schema 檢查）
     """
-    global _INIT_DONE
-    if _INIT_DONE and not force:
+    from db_backend import _current_user_schema
+    schema_key = _current_user_schema() or "_default"
+    if schema_key in _INIT_DONE_SCHEMAS and not force:
         return
-    _INIT_DONE = True   # 提前 set 避免 recursive call
+    _INIT_DONE_SCHEMAS.add(schema_key)   # 提前 set 避免 recursive call
     with _conn() as c:
         c.executescript(SCHEMA)
         # === 對舊 PG schema 的救援補丁 ===

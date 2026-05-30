@@ -106,6 +106,11 @@ def sign_in_with_password(email: str, password: str) -> tuple[bool, str]:
                 "id": user.id,
                 "email": user.email,
             }
+            # 🔒 安全：清空所有 cache，避免見到上一個用戶嘅資料
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
             return True, "登入成功"
         return False, "登入失敗"
     except Exception as ex:
@@ -130,6 +135,11 @@ def sign_up_with_password(email: str, password: str) -> tuple[bool, str]:
                     "id": resp.user.id,
                     "email": resp.user.email,
                 }
+                # 🔒 安全：清空所有 cache，避免見到上一個用戶嘅資料
+                try:
+                    st.cache_data.clear()
+                except Exception:
+                    pass
                 return True, "✅ 註冊成功並已登入"
             return True, (
                 "✅ 註冊成功！請查 email 點擊驗證連結後再登入。"
