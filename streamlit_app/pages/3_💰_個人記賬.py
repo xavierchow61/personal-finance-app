@@ -29,24 +29,44 @@ _accounts = _bundle["accounts"]
 _balances = _bundle["balances"]
 
 # === 頂部工具列：匯出 Excel（一鍵下載）===
-import cached_pfr as _cpfr
-
-
-@st.cache_data(ttl=60, show_spinner=False)
-def _build_pf_xlsx(_user_id, period):
-    """建立個人記賬 Excel；cloud 用 BytesIO 避免 /tmp 權限問題"""
-    import tempfile
-    from pathlib import Path as _P
-    import datetime as _dt
-    ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    tmp = _P(tempfile.gettempdir()) / f"PF_{_user_id}_{ts}.xlsx"
-    pfexp.export_all(tmp, period=period or None)
-    data = tmp.read_bytes()
-    try:
-        tmp.unlink()
-    except Exception:
-        pass
-    return data
+def _build_pf_xlsx_direct(period):
+    """建立個人記賬 Excel；用 BytesIO（避免 /tmp 權限/位置問題）
+    無 cache — 確保 error 即時可見
+    """
+    import io
+    from openpyxl import Workbook
+    from personal_finance.excel_export import (
+        _write_overview, _write_accounts, _write_journal,
+        _write_budget, _write_projects, _write_fx_rates,
+        _write_aliases,
+    )
+    buf = io.BytesIO()
+    wb = Workbook()
+    if wb.active:
+        wb.remove(wb.active)
+    # 每個 _write_xxx 個別 try，唔好整個 fail
+    sections = [
+        ("overview", lambda: _write_overview(wb, period=period)),
+        ("accounts", lambda: _write_accounts(wb, period=period)),
+        ("journal", lambda: _write_journal(wb, period=period)),
+        ("budget", lambda: _write_budget(wb, period=period)),
+        ("projects", lambda: _write_projects(wb)),
+        ("fx_rates", lambda: _write_fx_rates(wb)),
+        ("aliases", lambda: _write_aliases(wb)),
+    ]
+    errors = []
+    for name, fn in sections:
+        try:
+            fn()
+        except Exception as ex:
+            errors.append(f"{name}: {type(ex).__name__}: {ex}")
+    if not wb.worksheets:
+        # 完全冇任何 sheet → 加個 placeholder
+        ws = wb.create_sheet("空白")
+        ws["A1"] = "（無資料可匯出）"
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue(), errors
 
 
 exp_l, exp_c, exp_r = st.columns([2, 3, 2])
@@ -54,11 +74,9 @@ with exp_c:
     period_in = st.text_input("📅 指定 period（選填，YYYY-MM）", "",
                                 placeholder="留空 = 全部")
 with exp_r:
-    # Lazy build：只係用戶撳「準備匯出」先 build，避免每次 page render 都跑
     st.markdown("&nbsp;", unsafe_allow_html=True)  # 對齊 label 高度
     _pf_xlsx_key = f"_pf_xlsx_{period_in or 'all'}"
     if st.session_state.get(_pf_xlsx_key):
-        # 已 build 好 → 顯示下載按鈕
         import datetime as _dt
         ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         st.download_button(
@@ -69,24 +87,38 @@ with exp_r:
                   "spreadsheetml.sheet"),
             use_container_width=True,
             type="primary",
+            key=f"dl_pf_{_pf_xlsx_key}",
         )
     else:
         if st.button("📊 準備匯出 Excel",
                       use_container_width=True,
-                      type="primary"):
-            with st.spinner("📊 建立 Excel..."):
-                try:
-                    _pf_data = _build_pf_xlsx(
-                        _cpfr._uid(),
-                        period_in.strip() or None)
+                      type="primary",
+                      key="prep_pf_xlsx"):
+            st.toast("📊 開始建立 Excel...", icon="⏳")
+            try:
+                _pf_data, _section_errors = _build_pf_xlsx_direct(
+                    period_in.strip() or None)
+                if not _pf_data:
+                    st.error("Excel build 完成但 byte 為空")
+                else:
                     st.session_state[_pf_xlsx_key] = _pf_data
-                    st.rerun()
-                except Exception as ex:
-                    import traceback
-                    st.error(
-                        f"匯出失敗：{type(ex).__name__}: {ex}\n\n"
-                        f"```\n{traceback.format_exc()[:500]}\n```"
+                    if _section_errors:
+                        st.warning(
+                            "⚠️ 部分 sheet 建立失敗（但其他 OK）：\n\n"
+                            + "\n\n".join(_section_errors[:3])
+                        )
+                    st.toast(
+                        f"✅ Excel 已建立 ({len(_pf_data)//1024} KB)",
+                        icon="✅",
                     )
+                    st.rerun()
+            except Exception as ex:
+                import traceback
+                st.error(
+                    f"❌ 匯出失敗：{type(ex).__name__}: {ex}"
+                )
+                with st.expander("🔍 Stack trace（debug 用）"):
+                    st.code(traceback.format_exc())
 
 st.divider()
 
