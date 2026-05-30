@@ -1,0 +1,22 @@
+# Streamlit 主題 / 行為設定
+#
+# 🔒 重要：backgroundColor 喺 Streamlit 載入嘅最初一瞬就 apply，
+# 比 CSS gradient 仲早。設成淺藍可消除切頁時嘅白色閃動。
+
+[theme]
+# 用淺藍對齊我哋嘅 Doraemon gradient（避免切頁白屏）
+primaryColor = "#00A6E0"
+backgroundColor = "#E0F2FE"     # 淺天藍（gradient 起始色）
+secondaryBackgroundColor = "#BAE6FD"
+textColor = "#1A1A2E"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+# 對 file uploader 上限
+maxUploadSize = 50
+
+# 切頁時保留 session（減少 reset 感）
+# enableStaticServing = true   # 預設已開

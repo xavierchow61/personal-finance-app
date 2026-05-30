@@ -36,6 +36,22 @@ def inject_glass_style():
     """注入哆啦 A 夢風格 CSS。每個頁面開頭調用一次。"""
     css = f"""
     <style>
+    /* ============ 防切頁白屏：HTML/BODY 強制即時上藍底 ============ */
+    /* 比 .stApp 更早 paint，補上 Streamlit init JS 期間嘅瞬間白 */
+    html, body {{
+        background: {PALETTE['bg_a']} !important;
+        background-color: {PALETTE['bg_a']} !important;
+    }}
+    /* 用 View Transitions API（Chrome 111+）做平滑過場 */
+    @view-transition {{
+        navigation: auto;
+    }}
+    ::view-transition-old(root),
+    ::view-transition-new(root) {{
+        animation-duration: 0.25s;
+        animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }}
+
     /* ============ 天空藍漸層背景 + 鈴鐺黃 / 鼻子紅飄浮光暈 ============ */
     .stApp {{
         background: linear-gradient(135deg,
