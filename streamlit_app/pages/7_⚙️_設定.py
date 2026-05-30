@@ -1484,27 +1484,46 @@ with tab2:
         sel = st.dataframe(df_al, hide_index=True,
                             use_container_width=True,
                             on_select="rerun",
-                            selection_mode="single-row")
+                            selection_mode="multi-row")
 
-        # 填入頂部按鈕區（新增 + 編輯同一行）
-        _has_sel_al = bool(sel.selection.rows)
-        _sel_alias = None
-        if _has_sel_al:
-            _sel_alias = aliases[sel.selection.rows[0]]
+        # 計算 selection 狀態（支援 0 / 1 / 多行）
+        _sel_rows = sel.selection.rows
+        _n_sel = len(_sel_rows)
+        _can_edit = (_n_sel == 1)
+        _sel_alias = aliases[_sel_rows[0]] if _can_edit else None
+        _sel_alias_ids = [aliases[i]["alias_id"] for i in _sel_rows]
 
-        # 頂部按鈕區：新增 + 編輯 + 全部刪除
+        # 頂部按鈕區：新增 + 編輯 + 刪除（選定 / 全部）
         with _alias_action_bar:
-            if st.session_state.get("confirm_del_all_aliases"):
+            if st.session_state.get("confirm_del_aliases"):
                 # 確認模式：警告 + 確定 / 取消
-                st.warning("⚠️ 確認要刪除全部對應？此動作無法復原")
+                _del_ids = st.session_state.get(
+                    "confirm_del_aliases_ids") or []
+                _is_all = not _del_ids
+                if _is_all:
+                    st.warning(
+                        "⚠️ 確認要刪除「全部」對應？此動作無法復原"
+                    )
+                else:
+                    st.warning(
+                        f"⚠️ 確認要刪除選定的 {len(_del_ids)} 條對應？"
+                        f"此動作無法復原"
+                    )
                 cc1, cc2, _ccsp = st.columns([1, 1, 4])
                 if cc1.button("✅ 確定刪除", type="primary",
-                               key="do_del_all_aliases",
+                               key="do_del_aliases",
                                use_container_width=True):
                     try:
-                        n = pfdb.delete_all_payment_aliases()
+                        if _is_all:
+                            n = pfdb.delete_all_payment_aliases()
+                        else:
+                            for _id in _del_ids:
+                                pfdb.delete_payment_alias(int(_id))
+                            n = len(_del_ids)
                         st.session_state[
-                            "confirm_del_all_aliases"] = False
+                            "confirm_del_aliases"] = False
+                        st.session_state[
+                            "confirm_del_aliases_ids"] = None
                         st.toast(f"🗑️ 已刪除 {n} 條對應", icon="🗑️")
                         try:
                             import cached_pfr
@@ -1515,9 +1534,11 @@ with tab2:
                     except Exception as ex:
                         st.error(f"刪除失敗：{ex}")
                 if cc2.button("❌ 取消",
-                               key="cancel_del_all_aliases",
+                               key="cancel_del_aliases",
                                use_container_width=True):
-                    st.session_state["confirm_del_all_aliases"] = False
+                    st.session_state["confirm_del_aliases"] = False
+                    st.session_state[
+                        "confirm_del_aliases_ids"] = None
                     st.rerun()
             else:
                 # 一般模式：3 個按鈕並排
@@ -1528,27 +1549,40 @@ with tab2:
                                   key="open_new_alias_dlg"):
                         _alias_dialog("new")
                 with ab2:
-                    if _sel_alias:
+                    # 編輯只支援單行
+                    if _can_edit:
                         _lbl = (
                             f"✏️ 編輯：{_sel_alias['keyword']} → "
                             f"{_sel_alias['account_code']}"
                         )
-                    else:
+                    elif _n_sel == 0:
                         _lbl = "✏️ 編輯（請先選一行）"
+                    else:
+                        _lbl = f"✏️ 編輯（已選 {_n_sel} 行，僅支援單行）"
                     if st.button(
                         _lbl, use_container_width=True,
-                        disabled=not _has_sel_al,
+                        disabled=not _can_edit,
                         key="open_edit_alias_dlg",
                     ):
                         if _sel_alias:
                             _alias_dialog("edit", _sel_alias)
                 with ab3:
-                    if st.button("🗑️ 全部刪除",
+                    # 刪除按鈕：智能切換
+                    if _n_sel > 0:
+                        _del_lbl = f"🗑️ 刪除選定（{_n_sel} 行）"
+                        _del_ids_payload = _sel_alias_ids
+                    else:
+                        _del_lbl = "🗑️ 全部刪除"
+                        _del_ids_payload = []
+                    if st.button(_del_lbl,
                                   type="secondary",
                                   use_container_width=True,
-                                  key="ask_del_all_aliases"):
+                                  key="ask_del_aliases"):
                         st.session_state[
-                            "confirm_del_all_aliases"] = True
+                            "confirm_del_aliases"] = True
+                        st.session_state[
+                            "confirm_del_aliases_ids"] = \
+                            _del_ids_payload
                         st.rerun()
     else:
         # 表格為空時只填新增按鈕
