@@ -26,7 +26,7 @@ import cached_pfr
 period = st.text_input("期間（YYYY-MM）", value=date.today().strftime("%Y-%m"))
 
 # === 🚀 並行 fetch 預算頁所有資料（一次過載入）===
-with st.spinner("📊 載入預算資料..."):
+if True:   # ⚡ 移除 spinner（cache hit 即時，避免閃動）
     _bundle = cached_pfr.fetch_budget_bundle(period)
 rows = _bundle["rows"]
 _trend_data = _bundle["trend"]

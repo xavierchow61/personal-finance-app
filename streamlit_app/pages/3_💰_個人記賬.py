@@ -22,7 +22,7 @@ from personal_finance import excel_export as pfexp
 import cached_pfr
 
 # === 🚀 並行 fetch（一次 spinner，所有資料一起載入）===
-with st.spinner("📊 載入個人記賬資料..."):
+if True:   # ⚡ 移除 spinner（cache hit 即時，避免閃動）
     _bundle = cached_pfr.fetch_ledger_bundle()
 _entries = _bundle["entries"]
 _accounts = _bundle["accounts"]

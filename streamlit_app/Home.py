@@ -38,8 +38,10 @@ start, end = cached_pfr.period_dates(period_type)
 # === 🚀 並行 fetch 所有 dashboard data（一次過載入，由 ~25s 降至 ~5s）===
 as_of = end if period_type != "all" else None
 try:
-    with st.spinner("📊 並行載入所有資料中（首次需要 5-10 秒）..."):
-        bundle = cached_pfr.fetch_dashboard_bundle(as_of, start, end)
+    # ⚡ 直接 call cached function — cache hit 即時，
+    # cache miss 用 framework 自帶 spinner（已 show_spinner=False
+    # 喺 cache decorator，避免閃動）
+    bundle = cached_pfr.fetch_dashboard_bundle(as_of, start, end)
     nw = bundle["net_worth"]
     pl = bundle["income_statement"]
     spending_cats = bundle["spending_by_category"]

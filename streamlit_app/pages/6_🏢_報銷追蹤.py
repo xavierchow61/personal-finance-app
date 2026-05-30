@@ -24,7 +24,7 @@ from personal_finance import db as pfdb, posting as pfpost
 import cached_pfr
 
 # ============ 🚀 並行 fetch 報銷追蹤所有資料 ============
-with st.spinner("📊 載入報銷資料..."):
+if True:   # ⚡ 移除 spinner（cache hit 即時，避免閃動）
     _bundle = cached_pfr.fetch_reimbursement_bundle()
 summary = _bundle["summary"]
 all_company = _bundle["company_invoices"]

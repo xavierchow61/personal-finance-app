@@ -43,8 +43,7 @@ with tab1:
 
     st.markdown(f"**📅 {p_label}**（{start} 至 {end}）")
 
-    with st.spinner("📊 載入收支表..."):
-        pl = cached_pfr.income_statement(start, end)
+    pl = cached_pfr.income_statement(start, end)
     c1, c2, c3 = st.columns(3)
     kpi_card(c1, "💼 總收入", pl["total_income"], C["success"], "")
     kpi_card(c2, "🛒 總支出", pl["total_expense"], C["warning"], "")
@@ -102,8 +101,7 @@ with tab2:
             placeholder="例：銀行 / 投資 / 信用卡",
             key="bs_sub_filter",
         )
-    with st.spinner("🏦 載入資產負債表..."):
-        bs = cached_pfr.balance_sheet(as_of.isoformat())
+    bs = cached_pfr.balance_sheet(as_of.isoformat())
 
     # 應用 sub_type filter
     if sub_filter:
@@ -177,8 +175,7 @@ with tab3:
     pb_label = cc2.selectbox("期間 B", list(PERIODS.keys()),
                               index=1, key="cmp_b")
 
-    with st.spinner("⚖️ 載入期間對比..."):
-        cmp = cached_pfr.period_compare(PERIODS[pa_label], PERIODS[pb_label])
+    cmp = cached_pfr.period_compare(PERIODS[pa_label], PERIODS[pb_label])
 
     summary_df = pd.DataFrame([
         {"指標": "💼 收入",
