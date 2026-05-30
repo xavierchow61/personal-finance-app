@@ -494,13 +494,8 @@ with tab_acc:
                     f"「啟用此帳戶」）。"
                 )
 
-    # === 觸發按鈕：新增 ===
-    _btn_col, _spacer = st.columns([1, 5])
-    with _btn_col:
-        if st.button("➕ 新增帳戶", use_container_width=True,
-                      key="open_new_acc_dlg"):
-            _account_dialog("new")
-
+    # === 按鈕區（placeholder：先佔位，render 表後填埋）===
+    _action_bar = st.container()
     st.divider()
 
     # 應用 active filter
@@ -571,20 +566,45 @@ with tab_acc:
             },
         )
 
-        # === 編輯選定帳戶（觸發同一個 dialog）===
-        if sel_acc.selection.rows:
-            sel_code = df_acc.iloc[sel_acc.selection.rows[0]]["代碼"]
-            acc = pfdb.get_account(sel_code)
-            if acc:
-                _ebtn_col, _ebtn_spacer = st.columns([1, 5])
-                with _ebtn_col:
-                    if st.button(
-                        f"✏️ 編輯：{acc.get('icon') or ''}{acc['name']}",
-                        use_container_width=True,
-                        key=f"open_edit_dlg_{sel_code}",
-                    ):
-                        _account_dialog("edit", acc)
+        # === 填埋頂部按鈕區（新增 + 編輯同一行）===
+        _has_sel = bool(sel_acc.selection.rows)
+        _sel_acc_obj = None
+        if _has_sel:
+            _sel_code = df_acc.iloc[sel_acc.selection.rows[0]]["代碼"]
+            _sel_acc_obj = pfdb.get_account(_sel_code)
+
+        with _action_bar:
+            ba1, ba2, _ba_spacer = st.columns([1, 1, 4])
+            with ba1:
+                if st.button("➕ 新增帳戶",
+                              use_container_width=True,
+                              key="open_new_acc_dlg"):
+                    _account_dialog("new")
+            with ba2:
+                if _sel_acc_obj:
+                    _btn_label = (
+                        f"✏️ 編輯：{_sel_acc_obj.get('icon') or ''}"
+                        f"{_sel_acc_obj['name']}"
+                    )
+                else:
+                    _btn_label = "✏️ 編輯（先揀一行）"
+                if st.button(
+                    _btn_label,
+                    use_container_width=True,
+                    disabled=not _has_sel,
+                    key="open_edit_dlg",
+                ):
+                    if _sel_acc_obj:
+                        _account_dialog("edit", _sel_acc_obj)
     else:
+        # 表為空時填埋按鈕區（只新增）
+        with _action_bar:
+            ba1, _ba_spacer = st.columns([1, 5])
+            with ba1:
+                if st.button("➕ 新增帳戶",
+                              use_container_width=True,
+                              key="open_new_acc_dlg_empty"):
+                    _account_dialog("new")
         st.info("尚無符合條件的帳戶。")
 
 
