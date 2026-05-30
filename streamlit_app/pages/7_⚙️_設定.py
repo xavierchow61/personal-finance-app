@@ -697,11 +697,34 @@ with tab_acc:
             )
         else:
             # === 一般檢視模式 ===
-            df_acc = pd.DataFrame([
-                {
+            # 取得各帳戶現時餘額（cached，秒回）
+            _all_bals = cpfr.all_account_balances()
+            _bal_map = {b["code"]: b["balance"] for b in _all_bals}
+            # 計算父帳戶合計：父行 = 自己 + 所有子
+            _children_total = {}
+            for a in all_accs:
+                pc = a.get("parent_code")
+                if pc:
+                    _children_total[pc] = (
+                        _children_total.get(pc, 0)
+                        + _bal_map.get(a["code"], 0)
+                    )
+
+            df_rows = []
+            for (a, depth) in ordered:
+                own_bal = _bal_map.get(a["code"], 0)
+                has_child = a["code"] in _children_total
+                cur_bal = (own_bal + _children_total.get(a["code"], 0)
+                           if has_child else own_bal)
+                name_display = ("　└─ " if depth > 0 else "") + a["name"]
+                if has_child:
+                    name_display += (
+                        f"（合計 {sum(1 for _a in all_accs if _a.get('parent_code') == a['code'])} 子）"
+                    )
+                df_rows.append({
                     "代碼": a["code"],
                     "圖示": a.get("icon") or "",
-                    "名稱": (("　└─ " if depth > 0 else "") + a["name"]),
+                    "名稱": name_display,
                     "父帳戶": (
                         _name_by_code.get(a.get("parent_code"), "—")
                         if a.get("parent_code") else "—"
@@ -710,11 +733,11 @@ with tab_acc:
                         a["account_type"], a["account_type"]),
                     "幣別": a.get("currency") or "HKD",
                     "期初餘額": a.get("opening_balance") or 0,
+                    "現時餘額（HKD）": cur_bal,
                     "排序": a.get("sort_order") or 0,
                     "啟用": "✅" if a.get("is_active") else "❌",
-                }
-                for (a, depth) in ordered
-            ])
+                })
+            df_acc = pd.DataFrame(df_rows)
             sel_acc = st.dataframe(
                 df_acc, hide_index=True, use_container_width=True,
                 on_select="rerun", selection_mode="single-row",

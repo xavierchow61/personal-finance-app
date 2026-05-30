@@ -321,6 +321,32 @@ balances = all_balances_data  # 從 bundle 取得，不再 query
 assets = [b for b in balances if b["account_type"] == "asset"]
 liabs = [b for b in balances if b["account_type"] == "liability"]
 
+from streamlit_app._common import group_accounts_with_parent_totals
+import pandas as pd
+
+
+def _balance_df_with_parent_totals(items, label_col="帳戶"):
+    """產生帶父合計嘅 DataFrame"""
+    grouped = group_accounts_with_parent_totals(items)
+    rows = []
+    for it in grouped:
+        a = it["account"]
+        is_parent = it["is_parent"]
+        prefix = "　└ " if it["depth"] > 0 else ""
+        bal = (it["aggregated_balance"] if is_parent
+               else float(a.get("balance") or 0))
+        # 過濾 0 餘額（除 CASH 之外）
+        if abs(bal) < 0.005 and a["code"] != "CASH":
+            continue
+        suffix = (f"（合計 {it['n_children']} 子）"
+                  if is_parent else "")
+        rows.append({
+            label_col: f"{prefix}{a.get('icon') or ''} {a['name']}{suffix}",
+            "餘額 (HKD)": bal,
+        })
+    return pd.DataFrame(rows)
+
+
 col_a, col_l = st.columns(2)
 with col_a:
     st.markdown(
@@ -328,14 +354,7 @@ with col_a:
         f"font-size:1.05rem'>💵 資產</p>",
         unsafe_allow_html=True,
     )
-    import pandas as pd
-    df_a = pd.DataFrame([
-        {
-            "帳戶": f"{a.get('icon') or ''} {a['name']}",
-            "餘額 (HKD)": a["balance"],
-        }
-        for a in assets if abs(a["balance"]) > 0.005 or a["code"] == "CASH"
-    ])
+    df_a = _balance_df_with_parent_totals(assets)
     if not df_a.empty:
         st.dataframe(df_a, hide_index=True, use_container_width=True,
                       column_config={
@@ -349,13 +368,7 @@ with col_l:
         f"font-size:1.05rem'>💳 負債</p>",
         unsafe_allow_html=True,
     )
-    df_l = pd.DataFrame([
-        {
-            "帳戶": f"{l.get('icon') or ''} {l['name']}",
-            "餘額 (HKD)": l["balance"],
-        }
-        for l in liabs if abs(l["balance"]) > 0.005
-    ])
+    df_l = _balance_df_with_parent_totals(liabs)
     if not df_l.empty:
         st.dataframe(df_l, hide_index=True, use_container_width=True,
                       column_config={

@@ -141,22 +141,48 @@ with tab1:
 
 # === 帳戶總覽 ===
 with tab2:
-    st.caption("所有帳戶及目前餘額（以港幣顯示）")
-    # 用 bundle 資料，避免 N+1 query
-    accs = _accounts
+    st.caption("所有帳戶及目前餘額（以港幣顯示）— 父帳戶顯示本身與子帳戶合計")
+    from streamlit_app._common import group_accounts_with_parent_totals
+    # 結合 balance 入 _accounts
     bal_map = {b["code"]: b["balance"] for b in _balances}
-    df = pd.DataFrame([
-        {
+    accs_with_bal = [
+        {**a, "balance": bal_map.get(a["code"], 0)}
+        for a in _accounts
+        if a.get("is_active")  # 只顯示啟用嘅
+    ]
+    grouped = group_accounts_with_parent_totals(accs_with_bal)
+
+    df_rows = []
+    for item in grouped:
+        a = item["account"]
+        depth = item["depth"]
+        is_parent = item["is_parent"]
+        is_indent = depth > 0
+        name_prefix = "　└ " if is_indent else ""
+        balance_label = (
+            "本身餘額" if is_parent else "目前餘額（HKD）"
+        )
+        # 父帳戶（有子）顯示合計；其他顯示自己餘額
+        display_balance = (
+            item["aggregated_balance"] if is_parent
+            else float(a.get("balance") or 0)
+        )
+        row = {
             "代碼": a["code"],
-            "名稱": f"{a.get('icon') or ''} {a['name']}",
+            "名稱": (
+                f"{name_prefix}{a.get('icon') or ''} {a['name']}"
+                + (f"（合計 {item['n_children']} 子）"
+                   if is_parent else "")
+            ),
             "類型": a["account_type"],
             "幣別": a.get("currency") or "HKD",
             "期初餘額": a.get("opening_balance") or 0,
-            "目前餘額（HKD）": bal_map.get(a["code"], 0),
+            "目前餘額（HKD）": display_balance,
             "啟用中": "✅" if a["is_active"] else "❌",
         }
-        for a in accs
-    ])
+        df_rows.append(row)
+
+    df = pd.DataFrame(df_rows)
     st.dataframe(df, hide_index=True, use_container_width=True,
                   column_config={
                       "期初餘額": st.column_config.NumberColumn(format="$%.2f"),

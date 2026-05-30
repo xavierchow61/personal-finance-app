@@ -84,6 +84,7 @@ def all_account_balances(as_of_date: str | None = None) -> list[dict]:
     sql = f"""
         SELECT a.code, a.name, a.account_type, a.icon, a.color,
                a.currency, a.opening_balance, a.sort_order,
+               a.parent_code,
                COALESCE(SUM(jl.debit * COALESCE(je.fx_rate, 1)), 0)
                    AS total_dr,
                COALESCE(SUM(jl.credit * COALESCE(je.fx_rate, 1)), 0)
@@ -94,7 +95,8 @@ def all_account_balances(as_of_date: str | None = None) -> list[dict]:
             ON je.entry_id = jl.entry_id {date_join}
         WHERE a.is_active = 1
         GROUP BY a.code, a.name, a.account_type, a.icon, a.color,
-                 a.currency, a.opening_balance, a.sort_order
+                 a.currency, a.opening_balance, a.sort_order,
+                 a.parent_code
         ORDER BY a.account_type, a.sort_order, a.name
     """
 
@@ -120,6 +122,8 @@ def all_account_balances(as_of_date: str | None = None) -> list[dict]:
             "currency": r["currency"],
             "opening_balance": opening,
             "sort_order": r["sort_order"] if "sort_order" in r else 0,
+            "parent_code": (r["parent_code"]
+                             if "parent_code" in r else None),
             "balance": balance,
         })
     return out
@@ -492,26 +496,41 @@ def balance_sheet(as_of_date: str | None = None) -> dict:
     # 取代之前 N+1 query pattern（雲端 Supabase 會 timeout）
     all_bals = all_account_balances(as_of_date)
 
-    assets = []
-    liabs = []
+    # 第一輪：收集所有 asset / liability（保留 parent_code 做後續 group）
+    raw_assets = []
+    raw_liabs = []
     for r in all_bals:
         if r["account_type"] not in ("asset", "liability"):
             continue
         bal = float(r["balance"] or 0)
-        if abs(bal) < 0.005:
-            continue  # skip zero balance
         item = {
             "code": r["code"], "name": r["name"],
             "icon": r.get("icon"), "balance": bal,
+            "parent_code": r.get("parent_code"),
+            "sort_order": r.get("sort_order") or 0,
         }
         if r["account_type"] == "asset":
-            assets.append(item)
+            raw_assets.append(item)
         else:
-            liabs.append(item)
+            raw_liabs.append(item)
 
-    # Sort by balance desc
-    assets.sort(key=lambda x: -x["balance"])
-    liabs.sort(key=lambda x: -x["balance"])
+    # 第二輪：保留有餘額嘅，但同時要保留「無餘額但有子帳戶有餘額」嘅父
+    def _keep_with_children(items):
+        code_set = {a["code"] for a in items}
+        # 收集所有有餘額嘅 code
+        with_bal = {a["code"] for a in items if abs(a["balance"]) >= 0.005}
+        # 父 code 集合：被 with_bal 中嘅子帳戶引用
+        parents_needed = {a["parent_code"] for a in items
+                           if a["parent_code"] in code_set
+                           and a["code"] in with_bal}
+        keep_codes = with_bal | parents_needed
+        return [a for a in items if a["code"] in keep_codes]
+
+    assets = _keep_with_children(raw_assets)
+    liabs = _keep_with_children(raw_liabs)
+    # 排序：先 sort_order，再 name；balance_sheet 後續 view 會 group by parent
+    assets.sort(key=lambda x: (x["sort_order"], x["name"]))
+    liabs.sort(key=lambda x: (x["sort_order"], x["name"]))
 
     total_assets = sum(a["balance"] for a in assets)
     total_liabs = sum(l["balance"] for l in liabs)

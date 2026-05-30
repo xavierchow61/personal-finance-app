@@ -511,6 +511,63 @@ def cascade_account_picker(
     return c_code_by_label[sel_c_label]
 
 
+def group_accounts_with_parent_totals(accounts: list[dict]) -> list[dict]:
+    """將帳戶按父子關係分組並計算父帳戶合計。
+
+    輸入：每個帳戶 dict 至少要有 code, parent_code, balance,
+          name, icon, account_type 等欄位
+
+    輸出：排序好的 list，每項包含：
+        - account: 原始 dict
+        - depth: 0 = 頂層（父）, 1 = 子
+        - aggregated_balance: 父 = 自己 + 所有子；子 = 自己
+        - is_parent: 是否為有子帳戶的父
+        - n_children: 子帳戶數量
+    """
+    code_set = {a["code"] for a in accounts}
+    top_level = [
+        a for a in accounts
+        if not a.get("parent_code") or a["parent_code"] not in code_set
+    ]
+    children_of = {}
+    for a in accounts:
+        pc = a.get("parent_code")
+        if pc and pc in code_set:
+            children_of.setdefault(pc, []).append(a)
+    # 排序頂層
+    top_level.sort(key=lambda x: (
+        x.get("account_type") or "",
+        x.get("sort_order") or 0,
+        x.get("name") or "",
+    ))
+
+    result = []
+    for parent in top_level:
+        children = sorted(
+            children_of.get(parent["code"], []),
+            key=lambda x: (x.get("sort_order") or 0, x.get("name") or ""),
+        )
+        parent_bal = float(parent.get("balance") or 0)
+        children_total = sum(
+            float(c.get("balance") or 0) for c in children)
+        result.append({
+            "account": parent,
+            "depth": 0,
+            "aggregated_balance": parent_bal + children_total,
+            "is_parent": bool(children),
+            "n_children": len(children),
+        })
+        for child in children:
+            result.append({
+                "account": child,
+                "depth": 1,
+                "aggregated_balance": float(child.get("balance") or 0),
+                "is_parent": False,
+                "n_children": 0,
+            })
+    return result
+
+
 def check_api_key():
     """如果尚未設定 Gemini API key 則顯示警告"""
     import config
@@ -527,6 +584,7 @@ __all__ = [
     "C", "PALETTE",
     "app_header", "kpi_card", "init_dbs", "check_api_key",
     "cascade_account_picker",
+    "group_accounts_with_parent_totals",
     "glass_card_open", "glass_card_close", "plotly_glass_layout",
     "render_subpage_nav", "SUBPAGE_GROUPS",
 ]

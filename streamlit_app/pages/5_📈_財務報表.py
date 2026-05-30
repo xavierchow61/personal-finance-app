@@ -100,15 +100,30 @@ with tab2:
     kpi_card(c3, "📊 淨資產", bs["net_worth"], C["accent"], "")
 
     st.write("")
+    from streamlit_app._common import group_accounts_with_parent_totals
+
+    def _bs_df(items):
+        grouped = group_accounts_with_parent_totals(items)
+        rows = []
+        for it in grouped:
+            a = it["account"]
+            is_parent = it["is_parent"]
+            prefix = "　└ " if it["depth"] > 0 else ""
+            bal = (it["aggregated_balance"] if is_parent
+                   else float(a.get("balance") or 0))
+            suffix = (f"（合計 {it['n_children']} 子）"
+                      if is_parent else "")
+            rows.append({
+                "帳戶": f"{prefix}{a.get('icon') or ''} {a['name']}{suffix}",
+                "餘額 (HKD)": bal,
+            })
+        return pd.DataFrame(rows)
+
     ba, bl = st.columns(2)
     with ba:
         st.subheader("💵 資產")
         if bs["assets"]:
-            df_a = pd.DataFrame([
-                {"帳戶": f"{a.get('icon') or ''} {a['name']}",
-                 "餘額 (HKD)": a["balance"]}
-                for a in bs["assets"]
-            ])
+            df_a = _bs_df(bs["assets"])
             st.dataframe(df_a, hide_index=True, use_container_width=True,
                           column_config={
                               "餘額 (HKD)": st.column_config.NumberColumn(
@@ -117,11 +132,7 @@ with tab2:
     with bl:
         st.subheader("💳 負債")
         if bs["liabilities"]:
-            df_l = pd.DataFrame([
-                {"帳戶": f"{l.get('icon') or ''} {l['name']}",
-                 "餘額 (HKD)": l["balance"]}
-                for l in bs["liabilities"]
-            ])
+            df_l = _bs_df(bs["liabilities"])
             st.dataframe(df_l, hide_index=True, use_container_width=True,
                           column_config={
                               "餘額 (HKD)": st.column_config.NumberColumn(
