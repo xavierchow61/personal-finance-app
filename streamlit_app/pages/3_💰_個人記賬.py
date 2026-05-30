@@ -80,40 +80,62 @@ with tab1:
             }
             for e in entries
         ])
-        st.dataframe(df, hide_index=True, use_container_width=True,
-                      column_config={
-                          "金額（原幣）": st.column_config.NumberColumn(
-                              format="$%.2f"),
-                          "匯率": st.column_config.NumberColumn(format="%.4f"),
-                      })
+        st.caption("💡 點擊任何一行查看詳細分錄")
+        sel_je = st.dataframe(
+            df, hide_index=True, use_container_width=True,
+            on_select="rerun", selection_mode="single-row",
+            column_config={
+                "金額（原幣）": st.column_config.NumberColumn(
+                    format="$%.2f"),
+                "匯率": st.column_config.NumberColumn(format="%.4f"),
+            },
+            key="je_table",
+        )
 
-        with st.expander("🔍 查看某筆分錄詳細資料（請選擇分錄 ID）"):
-            ids = [str(e["entry_id"]) for e in entries]
-            picked = st.selectbox("分錄 ID", ids)
-            if picked:
-                full = pfdb.get_entry(int(picked))
-                if full:
-                    st.write(f"**日期：** {full['entry_date']}")
-                    st.write(f"**說明：** {full.get('description', '')}")
-                    if full.get("invoice_id"):
-                        st.write(f"**關聯單據：** #{full['invoice_id']}")
-                    line_df = pd.DataFrame([
-                        {
-                            "帳戶": l["account_code"],
-                            "借方": l["debit"] or "",
-                            "貸方": l["credit"] or "",
-                        }
-                        for l in full["lines"]
-                    ])
-                    st.dataframe(line_df, hide_index=True,
-                                  use_container_width=True)
-                    if st.button("🗑️ 刪除此分錄", key="del_entry"):
+        # === 選定行 → 顯示詳細 ===
+        if sel_je.selection.rows:
+            sel_je_id = int(df.iloc[sel_je.selection.rows[0]]["ID"])
+            full = pfdb.get_entry(sel_je_id)
+            if full:
+                st.divider()
+                d1, d2 = st.columns([3, 1])
+                with d1:
+                    st.markdown(
+                        f"### 📋 分錄 #{sel_je_id}：{full.get('description', '')}"
+                    )
+                    st.caption(
+                        f"📅 {full['entry_date']}"
+                        + (f" · 🧾 關聯單據 #{full['invoice_id']}"
+                           if full.get('invoice_id') else "")
+                    )
+                with d2:
+                    if st.button("🗑️ 刪除此分錄",
+                                  type="secondary",
+                                  use_container_width=True,
+                                  key=f"del_je_{sel_je_id}"):
                         try:
-                            pfdb.delete_entry(int(picked))
-                            st.success("已刪除")
+                            pfdb.delete_entry(sel_je_id)
+                            st.toast(
+                                f"🗑️ 已刪除分錄 #{sel_je_id}",
+                                icon="🗑️")
+                            try:
+                                import cached_pfr
+                                cached_pfr.invalidate_all()
+                            except Exception:
+                                pass
                             st.rerun()
                         except Exception as ex:
                             st.error(str(ex))
+                line_df = pd.DataFrame([
+                    {
+                        "帳戶": l["account_code"],
+                        "借方": l["debit"] or "",
+                        "貸方": l["credit"] or "",
+                    }
+                    for l in full["lines"]
+                ])
+                st.dataframe(line_df, hide_index=True,
+                              use_container_width=True)
     else:
         st.info("尚無分錄。請先前往「📤 提取單據」或於下方手動新增。")
 

@@ -725,7 +725,7 @@ with tab_acc:
                             f"{_sel_acc_obj['name']}"
                         )
                     else:
-                        _btn_label = "✏️ 編輯（請先選一行）"
+                        _btn_label = "✏️ 編輯"
                     if st.button(
                         _btn_label,
                         use_container_width=True,
@@ -1690,12 +1690,9 @@ with tab2:
                                 f" → {_sel_alias['account_code']}"
                             )
                         elif _n_sel == 0:
-                            _lbl = "✏️ 編輯（請先選一行）"
+                            _lbl = "✏️ 編輯"
                         else:
-                            _lbl = (
-                                f"✏️ 編輯（已選 {_n_sel} 行，"
-                                f"僅支援單行）"
-                            )
+                            _lbl = f"✏️ 編輯（已選 {_n_sel} 行）"
                         if st.button(
                             _lbl, use_container_width=True,
                             disabled=not _can_edit,
