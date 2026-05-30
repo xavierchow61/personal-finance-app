@@ -654,8 +654,10 @@ with tab_acc:
                             except Exception:
                                 pass
                             # 關閉批量編輯模式
-                            st.session_state[
-                                "acc_bulk_edit_toggle"] = False
+                            # 清 widget state → 下次 rerun toggle 回 False
+                            if "acc_bulk_edit_toggle" in st.session_state:
+                                del st.session_state[
+                                    "acc_bulk_edit_toggle"]
                             st.rerun()
                         else:
                             st.info("ℹ️ 沒有資料變動")
@@ -663,8 +665,8 @@ with tab_acc:
                     if st.button("❌ 取消編輯",
                                   use_container_width=True,
                                   key="bulk_cancel"):
-                        st.session_state[
-                            "acc_bulk_edit_toggle"] = False
+                        if "acc_bulk_edit_toggle" in st.session_state:
+                            del st.session_state["acc_bulk_edit_toggle"]
                         st.rerun()
 
             st.caption(
