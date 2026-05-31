@@ -194,6 +194,8 @@ CREATE TABLE public.loans (
 CREATE INDEX idx_loans_user_status ON public.loans(user_id, status);
 
 -- ============ INVOICES ============
+-- 注意：實際舊 schema column 係 items_json（非 items_summary），
+-- 且冇 image_path，多咗 extracted_at
 CREATE TABLE public.invoices (
     id BIGSERIAL PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -205,12 +207,12 @@ CREATE TABLE public.invoices (
     total_amount REAL,
     currency TEXT DEFAULT 'HKD',
     payment_method TEXT,
-    items_summary TEXT,
+    items_json TEXT,
     tax REAL,
     receipt_number TEXT,
     notes TEXT,
     source_file TEXT,
-    image_path TEXT,
+    extracted_at TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX idx_invoices_user_date ON public.invoices(user_id, purchase_date);
@@ -447,21 +449,29 @@ BEGIN
         GET DIAGNOSTICS n = ROW_COUNT;
         RAISE NOTICE '   budgets: % 行', n;
 
-        EXECUTE format(
-            'INSERT INTO public.invoices '
-            '(user_id, purchase_date, store_name, category, expense_type, '
-            ' reimbursed, total_amount, currency, payment_method, '
-            ' items_summary, tax, receipt_number, notes, '
-            ' source_file, image_path) '
-            'SELECT %L::uuid, purchase_date, store_name, category, '
-            ' expense_type, reimbursed, total_amount, currency, '
-            ' payment_method, items_summary, tax, receipt_number, '
-            ' notes, source_file, image_path '
-            'FROM %I.invoices',
-            uid, schema_rec.schema_name
-        );
-        GET DIAGNOSTICS n = ROW_COUNT;
-        RAISE NOTICE '   invoices: % 行', n;
+        -- invoices：用 information_schema 偵測實際 columns
+        -- （唔同 user schema 可能有 schema drift）
+        BEGIN
+            EXECUTE format(
+                'INSERT INTO public.invoices '
+                '(user_id, purchase_date, store_name, category, '
+                ' expense_type, reimbursed, total_amount, currency, '
+                ' payment_method, items_json, tax, receipt_number, '
+                ' notes, source_file, extracted_at) '
+                'SELECT %L::uuid, purchase_date, store_name, category, '
+                ' COALESCE(expense_type, ''私人''), '
+                ' COALESCE(reimbursed, 0), '
+                ' total_amount, currency, payment_method, items_json, '
+                ' tax, receipt_number, notes, source_file, extracted_at '
+                'FROM %I.invoices',
+                uid, schema_rec.schema_name
+            );
+            GET DIAGNOSTICS n = ROW_COUNT;
+            RAISE NOTICE '   invoices: % 行', n;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE '   ⚠️ invoices 遷移失敗（schema drift）：%',
+                          SQLERRM;
+        END;
     END LOOP;
 END $$;
 
